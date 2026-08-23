@@ -1,0 +1,71 @@
+rules_version = '2';
+
+// Every record in this app belongs to exactly one signed-in user, identified by
+// an `ownerId` field holding their auth uid. These rules are the only thing
+// standing between the ledger and the public internet — the Firebase config in
+// the client bundle is not a secret and grants nothing on its own.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // The document already stored belongs to the caller.
+    function ownsExisting() {
+      return isSignedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    // The document being written is stamped with the caller's own uid, so a
+    // user cannot create records owned by, or hand records to, someone else.
+    function ownsIncoming() {
+      return isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+    }
+
+    function hasMoney(field) {
+      return request.resource.data[field] is int
+        && request.resource.data[field] >= 0;
+    }
+
+    match /clients/{clientId} {
+      allow read, delete: if ownsExisting();
+      allow create: if ownsIncoming()
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0;
+      allow update: if ownsExisting() && ownsIncoming();
+    }
+
+    match /projects/{projectId} {
+      allow read, delete: if ownsExisting();
+      allow create: if ownsIncoming()
+        && hasMoney('agreedAmountCents')
+        && request.resource.data.commissionRate >= 0
+        && request.resource.data.commissionRate <= 1;
+      allow update: if ownsExisting() && ownsIncoming();
+    }
+
+    match /invoices/{invoiceId} {
+      allow read, delete: if ownsExisting();
+      allow create: if ownsIncoming() && hasMoney('amountDueCents');
+      allow update: if ownsExisting() && ownsIncoming();
+    }
+
+    match /transactions/{transactionId} {
+      allow read, delete: if ownsExisting();
+      allow create: if ownsIncoming() && hasMoney('amountCents');
+      allow update: if ownsExisting() && ownsIncoming();
+    }
+
+    // The freelancer's own business details, printed on invoices. Keyed by
+    // uid, so owning the document and being the user are the same check.
+    match /settings/{userId} {
+      allow read, write: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Anything not matched above is denied. Adding a collection means adding a
+    // rule for it here first.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
