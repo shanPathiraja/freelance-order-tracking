@@ -91,12 +91,15 @@ jobs:
 
       # Written via an env var rather than inline interpolation, so the JSON
       # cannot be mangled by the shell or leak through a command echo.
+      # `firebase init hosting:github` names the secret after the project, so
+      # this matches what it created rather than making you add a second copy
+      # under a tidier name.
       - name: Authenticate to Firebase
         env:
-          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_FREELANCER_TRACKING_SYSTEM }}
         run: |
           if [ -z "$FIREBASE_SERVICE_ACCOUNT" ]; then
-            echo "::error::FIREBASE_SERVICE_ACCOUNT secret is not set. See doc/ci-cd.md."
+            echo "::error::FIREBASE_SERVICE_ACCOUNT_FREELANCER_TRACKING_SYSTEM secret is not set. See doc/ci-cd.md."
             exit 1
           fi
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/service-account.json"

@@ -25,10 +25,16 @@ npx firebase-tools init hosting:github
 ```
 
 It asks for the repository (`shanPathiraja/freelance-order-tracking`), creates a
-service account, and adds it as the `FIREBASE_SERVICE_ACCOUNT` secret.
+service account, and adds it as a GitHub secret named after the project:
+**`FIREBASE_SERVICE_ACCOUNT_FREELANCER_TRACKING_SYSTEM`**. The workflow reads
+that exact name.
 
-**Say no when it offers to set up workflow files** — it would overwrite the one
-in this repo with its own.
+**It writes two workflow files of its own regardless of what you answer.**
+Delete them — `firebase-hosting-merge.yml` and
+`firebase-hosting-pull-request.yml`. They deploy without running `npm ci`
+(so the build fails), without the `VITE_FIREBASE_*` config (so a bundle that
+did build would show the setup screen), and without running the tests. Leaving
+them in place would also mean two workflows racing to deploy the same commit.
 
 #### If `init hosting:github` fails
 
@@ -53,7 +59,7 @@ steps and more predictable:
    everything, at the cost of being much broader than this needs.
 4. On that account → **Keys** → **Add key** → **Create new key** → JSON.
    Paste the entire file into GitHub → Settings → Secrets and variables →
-   Actions → **Secrets** → `FIREBASE_SERVICE_ACCOUNT`.
+   Actions → **Secrets** → `FIREBASE_SERVICE_ACCOUNT_FREELANCER_TRACKING_SYSTEM`.
 
 The key is a long-lived credential with deploy rights to the project. Treat it
 like a password: it belongs only in the GitHub secret, never in the repo.
