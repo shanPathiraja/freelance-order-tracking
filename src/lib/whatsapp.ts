@@ -9,7 +9,7 @@
  */
 
 import { formatCents } from './money'
-import type { Client, Invoice, Project, Transaction } from '../types/domain'
+import type { Client, Invoice, Order, Transaction } from '../types/domain'
 
 /**
  * Default country code used to expand nationally-formatted numbers.
@@ -67,7 +67,7 @@ export function waLink(phone: string, message: string): string {
 /** "Here's what you owe" — the manual stand-in for an automated invoice. */
 export function invoiceRequestMessage(
   client: Client,
-  project: Project,
+  order: Order,
   invoice: Invoice,
   balanceCents: number,
 ): string {
@@ -76,7 +76,7 @@ export function invoiceRequestMessage(
     // "Hi Burger," is worse than "Hi Burger Craft,".
     `Hi ${client.name},`,
     '',
-    `Invoice for *${project.title}* — ${invoice.label}.`,
+    `Invoice for *${order.title}* — ${invoice.label}.`,
     `Amount due: *${formatCents(invoice.amountDueCents)}*`,
   ]
 
@@ -92,7 +92,7 @@ export function invoiceRequestMessage(
 /** The thank-you receipt card, sent by hand after logging a payment. */
 export function receiptMessage(
   client: Client,
-  project: Project,
+  order: Order,
   transaction: Transaction,
   remainingCents: number,
 ): string {
@@ -101,7 +101,7 @@ export function receiptMessage(
     // "Hi Burger," is worse than "Hi Burger Craft,".
     `Hi ${client.name},`,
     '',
-    `Received ${formatCents(transaction.amountCents)} for *${project.title}* — thank you!`,
+    `Received ${formatCents(transaction.amountCents)} for *${order.title}* — thank you!`,
     `Payment date: ${formatDateForHumans(transaction.paidOn)}`,
   ]
 
@@ -117,14 +117,14 @@ export function receiptMessage(
 /** A nudge for an invoice that is late or nearly due. */
 export function reminderMessage(
   client: Client,
-  project: Project,
+  order: Order,
   invoice: Invoice,
   balanceCents: number,
   isOverdue: boolean,
 ): string {
   const opener = isOverdue
-    ? `Just a gentle reminder that the payment for *${project.title}* was due on ${formatDateForHumans(invoice.dueDate)}.`
-    : `A quick heads-up that the payment for *${project.title}* is due on ${formatDateForHumans(invoice.dueDate)}.`
+    ? `Just a gentle reminder that the payment for *${order.title}* was due on ${formatDateForHumans(invoice.dueDate)}.`
+    : `A quick heads-up that the payment for *${order.title}* is due on ${formatDateForHumans(invoice.dueDate)}.`
 
   return [
     // Full name, not a first name: most clients here are businesses, and

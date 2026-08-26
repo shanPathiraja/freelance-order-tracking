@@ -5,13 +5,15 @@ import { useOwnerId } from '../auth/AuthProvider'
 import { useWorkspace } from '../data/WorkspaceProvider'
 import * as repo from '../data/repository'
 import {
+  daysBetween,
+  deliveryBucket,
   dueBucket,
   invoiceTotals,
   isRetainerClearToContinue,
   lineItemsTotalCents,
   lineItemTotalCents,
   periodKeyOf,
-  projectTotals,
+  orderTotals,
   todayIso,
 } from '../lib/calc'
 import { centsToInputValue, formatCents, parseAmountToCents } from '../lib/money'
@@ -24,6 +26,7 @@ import {
   waLink,
 } from '../lib/whatsapp'
 import {
+  DeliveryPill,
   DuePill,
   EmptyState,
   Field,
@@ -41,56 +44,57 @@ import {
   type PaymentMethod,
 } from '../types/domain'
 
-export function ProjectPage() {
-  const { projectId } = useParams<{ projectId: string }>()
+export function OrderPage() {
+  const { orderId } = useParams<{ orderId: string }>()
   const ownerId = useOwnerId()
-  const { clients, projects, invoices, transactions, loading, refresh } =
+  const { clients, orders, invoices, transactions, loading, refresh } =
     useWorkspace()
 
   const [payingInvoice, setPayingInvoice] = useState<Invoice | null>(null)
   const [addingInvoice, setAddingInvoice] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [editingDueDate, setEditingDueDate] = useState(false)
 
   const today = todayIso()
-  const project = projects.find((p) => p.id === projectId)
-  const client = clients.find((c) => c.id === project?.clientId)
+  const order = orders.find((p) => p.id === orderId)
+  const client = clients.find((c) => c.id === order?.clientId)
 
-  const projectInvoices = useMemo(
+  const orderInvoices = useMemo(
     () =>
       invoices
-        .filter((i) => i.projectId === projectId)
+        .filter((i) => i.orderId === orderId)
         .sort((a, b) => a.dueDate.localeCompare(b.dueDate)),
-    [invoices, projectId],
+    [invoices, orderId],
   )
 
   const totals = useMemo(
-    () => (project ? projectTotals(project, invoices, transactions) : null),
-    [project, invoices, transactions],
+    () => (order ? orderTotals(order, invoices, transactions) : null),
+    [order, invoices, transactions],
   )
 
   if (loading) return <div className="page"><div className="empty">Loading…</div></div>
 
-  if (!project || !totals) {
+  if (!order || !totals) {
     return (
       <div className="page">
         <div className="card">
           <EmptyState>
-            That project no longer exists. <Link to="/">Back to dashboard</Link>
+            That order no longer exists. <Link to="/">Back to dashboard</Link>
           </EmptyState>
         </div>
       </div>
     )
   }
 
-  const isRetainer = project.billingType === 'monthly_retainer'
+  const isRetainer = order.billingType === 'monthly_retainer'
   const retainerBlocked =
     isRetainer &&
-    !isRetainerClearToContinue(periodKeyOf(today), projectInvoices, transactions)
+    !isRetainerClearToContinue(periodKeyOf(today), orderInvoices, transactions)
 
   async function generateNextMonth() {
-    if (!project) return
+    if (!order) return
 
-    const draft = nextRetainerInvoice(project, projectInvoices, today)
+    const draft = nextRetainerInvoice(order, orderInvoices, today)
     if (!draft) return
 
     setBusy(true)
@@ -102,13 +106,26 @@ export function ProjectPage() {
     }
   }
 
-  async function toggleProjectStatus() {
-    if (!project) return
+  async function saveDueDate(value: string) {
+    if (!order) return
 
     setBusy(true)
     try {
-      await repo.projects.update(project.id, {
-        status: project.status === 'active' ? 'completed' : 'active',
+      await repo.orders.update(order.id, { dueDate: value })
+      await refresh()
+      setEditingDueDate(false)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function toggleOrderStatus() {
+    if (!order) return
+
+    setBusy(true)
+    try {
+      await repo.orders.update(order.id, {
+        status: order.status === 'active' ? 'completed' : 'active',
       })
       await refresh()
     } finally {
@@ -120,7 +137,7 @@ export function ProjectPage() {
     <div className="page">
       <div className="page__header">
         <div>
-          <h1>{project.title}</h1>
+          <h1>{order.title}</h1>
           <p>
             {client ? (
               <Link className="row-link" to="/clients">
@@ -129,14 +146,47 @@ export function ProjectPage() {
             ) : (
               'Unknown client'
             )}{' '}
-            · {BILLING_TYPE_LABELS[project.billingType]}
-            {project.commissionRate > 0 &&
-              ` · ${Math.round(project.commissionRate * 100)}% commission`}
+            · {BILLING_TYPE_LABELS[order.billingType]}
+            {order.commissionRate > 0 &&
+              ` · ${Math.round(order.commissionRate * 100)}% commission`}
           </p>
+
+          <div className="inline-list" style={{ marginTop: '0.4rem' }}>
+            <span className="muted" style={{ fontSize: '0.85rem' }}>
+              Delivery due:
+            </span>
+            {editingDueDate ? (
+              <input
+                type="date"
+                autoFocus
+                defaultValue={order.dueDate ?? todayIso()}
+                disabled={busy}
+                style={{ width: 'auto' }}
+                onBlur={(e) => void saveDueDate(e.target.value)}
+              />
+            ) : (
+              <>
+                <button
+                  className="btn--sm btn--ghost"
+                  onClick={() => setEditingDueDate(true)}
+                >
+                  {order.dueDate
+                    ? formatDateForHumans(order.dueDate)
+                    : 'Set a date'}
+                </button>
+                <DeliveryPill bucket={deliveryBucket(order, today)} />
+                {order.dueDate && order.status === 'active' && (
+                  <span className="muted" style={{ fontSize: '0.8rem' }}>
+                    {describeDelivery(daysBetween(today, order.dueDate))}
+                  </span>
+                )}
+              </>
+            )}
+          </div>
         </div>
         <div className="actions">
-          <button onClick={toggleProjectStatus} disabled={busy}>
-            {project.status === 'active' ? 'Mark completed' : 'Reopen'}
+          <button onClick={toggleOrderStatus} disabled={busy}>
+            {order.status === 'active' ? 'Mark completed' : 'Reopen'}
           </button>
           {isRetainer ? (
             <button className="btn--primary" onClick={generateNextMonth} disabled={busy}>
@@ -164,7 +214,7 @@ export function ProjectPage() {
           value={formatCents(totals.committedCents)}
           hint={
             isRetainer
-              ? `${formatCents(project.agreedAmountCents)} per month`
+              ? `${formatCents(order.agreedAmountCents)} per month`
               : undefined
           }
         />
@@ -200,10 +250,10 @@ export function ProjectPage() {
           <StatusPill status={totals.status} />
         </div>
 
-        {projectInvoices.length === 0 ? (
+        {orderInvoices.length === 0 ? (
           <EmptyState>
             No invoices yet.{' '}
-            {project.billingType === 'milestone'
+            {order.billingType === 'milestone'
               ? 'Add one for each milestone as you agree it.'
               : 'Add the first one to start billing.'}
           </EmptyState>
@@ -222,7 +272,7 @@ export function ProjectPage() {
                 </tr>
               </thead>
               <tbody>
-                {projectInvoices.map((invoice) => {
+                {orderInvoices.map((invoice) => {
                   const line = invoiceTotals(invoice, transactions)
                   const bucket = dueBucket(invoice, transactions, today)
 
@@ -255,7 +305,7 @@ export function ProjectPage() {
                                 client.whatsapp,
                                 invoiceRequestMessage(
                                   client,
-                                  project,
+                                  order,
                                   invoice,
                                   line.balanceCents,
                                 ),
@@ -285,7 +335,7 @@ export function ProjectPage() {
         )}
       </section>
 
-      <TransactionList projectId={project.id} />
+      <TransactionList orderId={order.id} />
 
       {payingInvoice && (
         <LogPaymentModal
@@ -295,8 +345,8 @@ export function ProjectPage() {
       )}
       {addingInvoice && (
         <AddInvoiceModal
-          project={project}
-          existingCount={projectInvoices.length}
+          order={order}
+          existingCount={orderInvoices.length}
           uninvoicedCents={totals.uninvoicedCents}
           onClose={() => setAddingInvoice(false)}
         />
@@ -305,20 +355,20 @@ export function ProjectPage() {
   )
 }
 
-function TransactionList({ projectId }: { projectId: string }) {
-  const { transactions, clients, projects, invoices, refresh } = useWorkspace()
+function TransactionList({ orderId }: { orderId: string }) {
+  const { transactions, clients, orders, invoices, refresh } = useWorkspace()
   const [busyId, setBusyId] = useState<string | null>(null)
 
   const rows = useMemo(
     () =>
       transactions
-        .filter((t) => t.projectId === projectId)
+        .filter((t) => t.orderId === orderId)
         .sort((a, b) => b.paidOn.localeCompare(a.paidOn)),
-    [transactions, projectId],
+    [transactions, orderId],
   )
 
-  const project = projects.find((p) => p.id === projectId)
-  const client = clients.find((c) => c.id === project?.clientId)
+  const order = orders.find((p) => p.id === orderId)
+  const client = clients.find((c) => c.id === order?.clientId)
 
   async function markCleared(id: string) {
     setBusyId(id)
@@ -347,7 +397,7 @@ function TransactionList({ projectId }: { projectId: string }) {
       </div>
 
       {rows.length === 0 ? (
-        <EmptyState>No payments logged for this project yet.</EmptyState>
+        <EmptyState>No payments logged for this order yet.</EmptyState>
       ) : (
         <div className="table-wrap">
           <table>
@@ -364,8 +414,8 @@ function TransactionList({ projectId }: { projectId: string }) {
             <tbody>
               {rows.map((transaction) => {
                 const against = invoices.find((i) => i.id === transaction.invoiceId)
-                const remaining = project
-                  ? projectTotals(project, invoices, transactions).balanceCents
+                const remaining = order
+                  ? orderTotals(order, invoices, transactions).balanceCents
                   : 0
 
                 return (
@@ -386,7 +436,7 @@ function TransactionList({ projectId }: { projectId: string }) {
                     </td>
                     <td className="num">
                       <div className="inline-list" style={{ justifyContent: 'flex-end' }}>
-                        {client && isUsableWhatsAppNumber(client.whatsapp) && project && (
+                        {client && isUsableWhatsAppNumber(client.whatsapp) && order && (
                           <WhatsAppButton
                             small
                             label="Receipt"
@@ -394,7 +444,7 @@ function TransactionList({ projectId }: { projectId: string }) {
                               client.whatsapp,
                               receiptMessage(
                                 client,
-                                project,
+                                order,
                                 transaction,
                                 remaining,
                               ),
@@ -469,7 +519,7 @@ function LogPaymentModal({
     try {
       await repo.transactions.create(ownerId, {
         invoiceId: invoice.id,
-        projectId: invoice.projectId,
+        orderId: invoice.orderId,
         clientId: invoice.clientId,
         amountCents,
         paidOn,
@@ -571,12 +621,12 @@ function LogPaymentModal({
 }
 
 function AddInvoiceModal({
-  project,
+  order,
   existingCount,
   uninvoicedCents,
   onClose,
 }: {
-  project: { id: string; clientId: string; billingType: string }
+  order: { id: string; clientId: string; billingType: string }
   existingCount: number
   uninvoicedCents: number
   onClose: () => void
@@ -584,7 +634,7 @@ function AddInvoiceModal({
   const ownerId = useOwnerId()
   const { refresh } = useWorkspace()
 
-  const isMilestone = project.billingType === 'milestone'
+  const isMilestone = order.billingType === 'milestone'
 
   const [label, setLabel] = useState(
     isMilestone ? `Milestone ${existingCount + 1}` : '',
@@ -623,8 +673,8 @@ function AddInvoiceModal({
 
     try {
       await repo.invoices.create(ownerId, {
-        projectId: project.id,
-        clientId: project.clientId,
+        orderId: order.id,
+        clientId: order.clientId,
         label: label.trim(),
         // Derived from the lines, so every balance calculation downstream
         // keeps working without knowing this invoice was itemised.
@@ -735,7 +785,7 @@ function AddInvoiceModal({
 
       {exceedsAgreed && (
         <div className="banner banner--warn">
-          This takes the invoiced total above the agreed amount for the project.
+          This takes the invoiced total above the agreed amount for the order.
         </div>
       )}
 
@@ -781,4 +831,11 @@ function toLineItem(row: LineRow): InvoiceLineItem | null {
   if (unitPriceCents === null) return null
 
   return { description: row.description.trim(), quantity, unitPriceCents }
+}
+
+/** Plain-language gap to a delivery date. */
+function describeDelivery(days: number): string {
+  if (days === 0) return 'due today'
+  if (days < 0) return `${Math.abs(days)} day${days === -1 ? '' : 's'} late`
+  return `in ${days} day${days === 1 ? '' : 's'}`
 }

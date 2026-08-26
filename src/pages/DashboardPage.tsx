@@ -4,9 +4,11 @@ import { Link } from 'react-router-dom'
 import { useWorkspace } from '../data/WorkspaceProvider'
 import {
   dashboardSummary,
+  daysBetween,
+  deliveryBucket,
   dueBucket,
   invoiceTotals,
-  projectTotals,
+  orderTotals,
   todayIso,
   type DueBucket,
 } from '../lib/calc'
@@ -18,6 +20,7 @@ import {
   waLink,
 } from '../lib/whatsapp'
 import {
+  DeliveryPill,
   DuePill,
   EmptyState,
   Money,
@@ -28,13 +31,13 @@ import {
 import { BILLING_TYPE_LABELS } from '../types/domain'
 
 export function DashboardPage() {
-  const { clients, projects, invoices, transactions, loading, error } =
+  const { clients, orders, invoices, transactions, loading, error } =
     useWorkspace()
   const today = todayIso()
 
   const summary = useMemo(
-    () => dashboardSummary(projects, invoices, transactions, today),
-    [projects, invoices, transactions, today],
+    () => dashboardSummary(orders, invoices, transactions, today),
+    [orders, invoices, transactions, today],
   )
 
   /**
@@ -44,16 +47,16 @@ export function DashboardPage() {
    */
   const needsChasing = useMemo(() => {
     const activeIds = new Set(
-      projects.filter((p) => p.status === 'active').map((p) => p.id),
+      orders.filter((p) => p.status === 'active').map((p) => p.id),
     )
 
     return invoices
-      .filter((invoice) => activeIds.has(invoice.projectId))
+      .filter((invoice) => activeIds.has(invoice.orderId))
       .map((invoice) => ({
         invoice,
         bucket: dueBucket(invoice, transactions, today),
         totals: invoiceTotals(invoice, transactions),
-        project: projects.find((p) => p.id === invoice.projectId),
+        order: orders.find((p) => p.id === invoice.orderId),
         client: clients.find((c) => c.id === invoice.clientId),
       }))
       .filter(
@@ -61,20 +64,38 @@ export function DashboardPage() {
           row.bucket === 'overdue' || row.bucket === 'due_soon',
       )
       .sort((a, b) => a.invoice.dueDate.localeCompare(b.invoice.dueDate))
-  }, [clients, projects, invoices, transactions, today])
+  }, [clients, orders, invoices, transactions, today])
 
-  /** Section 3 of the scenario document: one row per active project. */
+  /**
+   * Orders promised soon or already late. Delivery deadlines are tracked
+   * separately from payment dates — a paid order can still be overdue to
+   * deliver, and vice versa.
+   */
+  const deliveries = useMemo(
+    () =>
+      orders
+        .map((order) => ({
+          order,
+          bucket: deliveryBucket(order, today),
+          client: clients.find((c) => c.id === order.clientId),
+        }))
+        .filter((row) => row.bucket === 'overdue' || row.bucket === 'due_soon')
+        .sort((a, b) => (a.order.dueDate ?? '').localeCompare(b.order.dueDate ?? '')),
+    [clients, orders, today],
+  )
+
+  /** Section 3 of the scenario document: one row per active order. */
   const ledger = useMemo(
     () =>
-      projects
+      orders
         .filter((p) => p.status === 'active')
-        .map((project) => ({
-          project,
-          client: clients.find((c) => c.id === project.clientId),
-          totals: projectTotals(project, invoices, transactions),
+        .map((order) => ({
+          order,
+          client: clients.find((c) => c.id === order.clientId),
+          totals: orderTotals(order, invoices, transactions),
         }))
         .sort((a, b) => b.totals.balanceCents - a.totals.balanceCents),
-    [clients, projects, invoices, transactions],
+    [clients, orders, invoices, transactions],
   )
 
   if (loading) return <div className="page"><div className="empty">Loading…</div></div>
@@ -98,7 +119,7 @@ export function DashboardPage() {
         <Stat
           label="Outstanding"
           value={formatCents(summary.outstandingCents)}
-          hint={`across ${summary.activeProjects} active project${summary.activeProjects === 1 ? '' : 's'}`}
+          hint={`across ${summary.activeOrders} active order${summary.activeOrders === 1 ? '' : 's'}`}
           alert={summary.outstandingCents > 0}
         />
         <Stat
@@ -118,9 +139,64 @@ export function DashboardPage() {
         <Stat
           label="Book of work"
           value={formatCents(summary.totalAgreedCents)}
-          hint="agreed across active projects"
+          hint="agreed across active orders"
         />
       </div>
+
+      <section className="card">
+        <div className="card__title">
+          <h2>Deliveries due</h2>
+          {summary.overdueDeliveries > 0 && (
+            <span className="pill pill--overdue">
+              {summary.overdueDeliveries} late
+            </span>
+          )}
+          {summary.deliveriesDueSoon > 0 && (
+            <span className="pill pill--due_soon">
+              {summary.deliveriesDueSoon} this week
+            </span>
+          )}
+        </div>
+
+        {deliveries.length === 0 ? (
+          <EmptyState>Nothing due for delivery in the next week.</EmptyState>
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Client</th>
+                  <th>Order</th>
+                  <th>Due</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {deliveries.map(({ order, bucket, client }) => {
+                  const days = daysBetween(today, order.dueDate ?? today)
+                  return (
+                    <tr key={order.id}>
+                      <td>{client?.name ?? '—'}</td>
+                      <td>
+                        <Link className="row-link" to={`/orders/${order.id}`}>
+                          {order.title}
+                        </Link>
+                      </td>
+                      <td>
+                        <div className="inline-list">
+                          <span>{formatDateForHumans(order.dueDate ?? '')}</span>
+                          <DeliveryPill bucket={bucket} />
+                        </div>
+                      </td>
+                      <td className="muted">{describeDays(days)}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
 
       <section className="card">
         <div className="card__title">
@@ -152,18 +228,18 @@ export function DashboardPage() {
                 </tr>
               </thead>
               <tbody>
-                {needsChasing.map(({ invoice, bucket, totals, project, client }) => (
+                {needsChasing.map(({ invoice, bucket, totals, order, client }) => (
                   <tr key={invoice.id}>
                     <td>
-                      {project ? (
-                        <Link className="row-link" to={`/projects/${project.id}`}>
+                      {order ? (
+                        <Link className="row-link" to={`/orders/${order.id}`}>
                           {client?.name ?? 'Unknown client'}
                         </Link>
                       ) : (
                         client?.name
                       )}
                       <div className="muted" style={{ fontSize: '0.8rem' }}>
-                        {project?.title}
+                        {order?.title}
                       </div>
                     </td>
                     <td>{invoice.label}</td>
@@ -177,7 +253,7 @@ export function DashboardPage() {
                       <Money cents={totals.balanceCents} />
                     </td>
                     <td className="num">
-                      {client && isUsableWhatsAppNumber(client.whatsapp) && project && (
+                      {client && isUsableWhatsAppNumber(client.whatsapp) && order && (
                         <WhatsAppButton
                           small
                           label="Remind"
@@ -185,7 +261,7 @@ export function DashboardPage() {
                             client.whatsapp,
                             reminderMessage(
                               client,
-                              project,
+                              order,
                               invoice,
                               totals.balanceCents,
                               bucket === 'overdue',
@@ -212,8 +288,8 @@ export function DashboardPage() {
 
         {ledger.length === 0 ? (
           <EmptyState>
-            No active projects yet. Add a client, then create their first
-            project.
+            No active orders yet. Add a client, then create their first
+            order.
           </EmptyState>
         ) : (
           <div className="table-wrap">
@@ -221,7 +297,8 @@ export function DashboardPage() {
               <thead>
                 <tr>
                   <th>Client</th>
-                  <th>Project</th>
+                  <th>Order</th>
+                  <th>Due</th>
                   <th>Billing</th>
                   <th className="num">Agreed</th>
                   <th className="num">Paid</th>
@@ -230,16 +307,26 @@ export function DashboardPage() {
                 </tr>
               </thead>
               <tbody>
-                {ledger.map(({ project, client, totals }) => (
-                  <tr key={project.id}>
+                {ledger.map(({ order, client, totals }) => (
+                  <tr key={order.id}>
                     <td>{client?.name ?? '—'}</td>
                     <td>
-                      <Link className="row-link" to={`/projects/${project.id}`}>
-                        {project.title}
+                      <Link className="row-link" to={`/orders/${order.id}`}>
+                        {order.title}
                       </Link>
                     </td>
+                    <td>
+                      {order.dueDate ? (
+                        <div className="inline-list">
+                          <span>{formatDateForHumans(order.dueDate)}</span>
+                          <DeliveryPill bucket={deliveryBucket(order, today)} />
+                        </div>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
+                    </td>
                     <td className="muted">
-                      {BILLING_TYPE_LABELS[project.billingType]}
+                      {BILLING_TYPE_LABELS[order.billingType]}
                     </td>
                     <td className="num">
                       {formatCents(totals.committedCents)}
@@ -260,4 +347,11 @@ export function DashboardPage() {
       </section>
     </div>
   )
+}
+
+/** '3 days late', 'due today', 'in 5 days'. */
+function describeDays(days: number): string {
+  if (days === 0) return 'due today'
+  if (days < 0) return `${Math.abs(days)} day${days === -1 ? '' : 's'} late`
+  return `in ${days} day${days === 1 ? '' : 's'}`
 }

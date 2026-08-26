@@ -20,11 +20,11 @@ const MIN_ROWS = 12
  */
 export function InvoicePrintPage() {
   const { invoiceId } = useParams<{ invoiceId: string }>()
-  const { clients, projects, invoices, transactions, profile, loading } =
+  const { clients, orders, invoices, transactions, profile, loading } =
     useWorkspace()
 
   const invoice = invoices.find((i) => i.id === invoiceId)
-  const project = projects.find((p) => p.id === invoice?.projectId)
+  const order = orders.find((p) => p.id === invoice?.orderId)
   const client = clients.find((c) => c.id === invoice?.clientId)
 
   const totals = useMemo(
@@ -70,8 +70,8 @@ export function InvoicePrintPage() {
   return (
     <>
       <div className="print-toolbar">
-        <Link className="btn btn--sm" to={`/projects/${invoice.projectId}`}>
-          ← Back to project
+        <Link className="btn btn--sm" to={`/orders/${invoice.orderId}`}>
+          ← Back to order
         </Link>
         <span className="muted">
           Use your browser's print dialog to save this as a PDF.
@@ -134,7 +134,7 @@ export function InvoicePrintPage() {
           <strong>{client?.name ?? '—'}</strong>
         </div>
 
-        {project && <div className="sheet__project">{project.title}</div>}
+        {order && <div className="sheet__order">{order.title}</div>}
 
         <table className="sheet__items">
           <thead>

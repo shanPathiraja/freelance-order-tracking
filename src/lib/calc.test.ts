@@ -4,6 +4,7 @@ import {
   clearedTotalCents,
   dashboardSummary,
   daysBetween,
+  deliveryBucket,
   derivePaymentStatus,
   dueBucket,
   freelancerPayoutCents,
@@ -11,16 +12,16 @@ import {
   isRetainerClearToContinue,
   lineItemsTotalCents,
   lineItemTotalCents,
-  projectTotals,
+  orderTotals,
   recordedTotalCents,
   todayIso,
 } from './calc'
 import { parseAmountToCents, percentOfCents, splitCents } from './money'
-import type { Invoice, Project, Transaction } from '../types/domain'
+import type { Invoice, Order, Transaction } from '../types/domain'
 
 const OWNER = 'owner-1'
 
-function project(over: Partial<Project> & { id: string }): Project {
+function order(over: Partial<Order> & { id: string }): Order {
   return {
     ownerId: OWNER,
     createdAt: 0,
@@ -38,7 +39,7 @@ function invoice(over: Partial<Invoice> & { id: string }): Invoice {
   return {
     ownerId: OWNER,
     createdAt: 0,
-    projectId: 'project-1',
+    orderId: 'order-1',
     clientId: 'client-1',
     label: 'Invoice',
     amountDueCents: 0,
@@ -52,7 +53,7 @@ function txn(over: Partial<Transaction> & { id: string }): Transaction {
     ownerId: OWNER,
     createdAt: 0,
     invoiceId: 'invoice-1',
-    projectId: 'project-1',
+    orderId: 'order-1',
     clientId: 'client-1',
     amountCents: 0,
     paidOn: '2026-03-01',
@@ -95,7 +96,7 @@ describe('splitCents', () => {
 })
 
 describe('Scenario A — Burger Craft, 50/50 split on $400', () => {
-  const burgerCraft = project({
+  const burgerCraft = order({
     id: 'p-burger',
     title: 'Menu Design & Banner Printing',
     billingType: 'fixed_split',
@@ -104,24 +105,24 @@ describe('Scenario A — Burger Craft, 50/50 split on $400', () => {
 
   const advance = invoice({
     id: 'i-advance',
-    projectId: 'p-burger',
+    orderId: 'p-burger',
     label: '50% Advance',
     amountDueCents: 20_000,
   })
 
   const balance = invoice({
     id: 'i-balance',
-    projectId: 'p-burger',
+    orderId: 'p-burger',
     label: 'Balance on delivery',
     amountDueCents: 20_000,
   })
 
   it('reads Partially Paid with $200 outstanding after the advance', () => {
     const paid = [
-      txn({ id: 't1', invoiceId: 'i-advance', projectId: 'p-burger', amountCents: 20_000 }),
+      txn({ id: 't1', invoiceId: 'i-advance', orderId: 'p-burger', amountCents: 20_000 }),
     ]
 
-    const totals = projectTotals(burgerCraft, [advance, balance], paid)
+    const totals = orderTotals(burgerCraft, [advance, balance], paid)
 
     expect(totals.paidCents).toBe(20_000)
     expect(totals.balanceCents).toBe(20_000)
@@ -132,11 +133,11 @@ describe('Scenario A — Burger Craft, 50/50 split on $400', () => {
 
   it('reads Fully Paid once the delivery balance lands', () => {
     const paid = [
-      txn({ id: 't1', invoiceId: 'i-advance', projectId: 'p-burger', amountCents: 20_000 }),
-      txn({ id: 't2', invoiceId: 'i-balance', projectId: 'p-burger', amountCents: 20_000 }),
+      txn({ id: 't1', invoiceId: 'i-advance', orderId: 'p-burger', amountCents: 20_000 }),
+      txn({ id: 't2', invoiceId: 'i-balance', orderId: 'p-burger', amountCents: 20_000 }),
     ]
 
-    const totals = projectTotals(burgerCraft, [advance, balance], paid)
+    const totals = orderTotals(burgerCraft, [advance, balance], paid)
 
     expect(totals.balanceCents).toBe(0)
     expect(totals.status).toBe('fully_paid')
@@ -195,7 +196,7 @@ describe('Scenario B — Aura Fashion, $300/month retainer', () => {
 })
 
 describe('Scenario C — Nova Code, $1,000 brand identity in three milestones', () => {
-  const novaCode = project({
+  const novaCode = order({
     id: 'p-nova',
     title: 'Full Brand Identity Package',
     billingType: 'milestone',
@@ -203,27 +204,27 @@ describe('Scenario C — Nova Code, $1,000 brand identity in three milestones', 
   })
 
   const invoices = [
-    invoice({ id: 'm1', projectId: 'p-nova', label: 'Logos', amountDueCents: 30_000 }),
-    invoice({ id: 'm2', projectId: 'p-nova', label: 'Guidelines', amountDueCents: 40_000 }),
-    invoice({ id: 'm3', projectId: 'p-nova', label: 'Asset handoff', amountDueCents: 30_000 }),
+    invoice({ id: 'm1', orderId: 'p-nova', label: 'Logos', amountDueCents: 30_000 }),
+    invoice({ id: 'm2', orderId: 'p-nova', label: 'Guidelines', amountDueCents: 40_000 }),
+    invoice({ id: 'm3', orderId: 'p-nova', label: 'Asset handoff', amountDueCents: 30_000 }),
   ]
 
   it('walks the balance down 700 -> 300 -> 0 as the document describes', () => {
     const payments = [
-      txn({ id: 't1', invoiceId: 'm1', projectId: 'p-nova', amountCents: 30_000 }),
-      txn({ id: 't2', invoiceId: 'm2', projectId: 'p-nova', amountCents: 40_000 }),
-      txn({ id: 't3', invoiceId: 'm3', projectId: 'p-nova', amountCents: 30_000 }),
+      txn({ id: 't1', invoiceId: 'm1', orderId: 'p-nova', amountCents: 30_000 }),
+      txn({ id: 't2', invoiceId: 'm2', orderId: 'p-nova', amountCents: 40_000 }),
+      txn({ id: 't3', invoiceId: 'm3', orderId: 'p-nova', amountCents: 30_000 }),
     ]
 
     const balancesAfterEachPayment = payments.map((_, i) =>
-      projectTotals(novaCode, invoices, payments.slice(0, i + 1)).balanceCents,
+      orderTotals(novaCode, invoices, payments.slice(0, i + 1)).balanceCents,
     )
 
     expect(balancesAfterEachPayment).toEqual([70_000, 30_000, 0])
   })
 
   it('tracks how much of the agreed total is not yet invoiced', () => {
-    const totals = projectTotals(novaCode, invoices.slice(0, 1), [])
+    const totals = orderTotals(novaCode, invoices.slice(0, 1), [])
 
     expect(totals.invoicedCents).toBe(30_000)
     expect(totals.uninvoicedCents).toBe(70_000)
@@ -231,33 +232,33 @@ describe('Scenario C — Nova Code, $1,000 brand identity in three milestones', 
 })
 
 describe('a retainer accrues rather than working down a total', () => {
-  const retainer = project({
+  const retainer = order({
     id: 'p-aura',
     billingType: 'monthly_retainer',
-    // The agreed amount is a monthly rate, not a project total.
+    // The agreed amount is a monthly rate, not an order total.
     agreedAmountCents: 30_000,
   })
 
   const august = invoice({
     id: 'i-aug',
-    projectId: 'p-aura',
+    orderId: 'p-aura',
     amountDueCents: 30_000,
     periodKey: '2026-08',
   })
 
   const september = invoice({
     id: 'i-sep',
-    projectId: 'p-aura',
+    orderId: 'p-aura',
     amountDueCents: 30_000,
     periodKey: '2026-09',
   })
 
   it('owes the sum of months billed, not the monthly rate', () => {
     const paidAugustOnly = [
-      txn({ id: 't1', invoiceId: 'i-aug', projectId: 'p-aura', amountCents: 30_000 }),
+      txn({ id: 't1', invoiceId: 'i-aug', orderId: 'p-aura', amountCents: 30_000 }),
     ]
 
-    const totals = projectTotals(retainer, [august, september], paidAugustOnly)
+    const totals = orderTotals(retainer, [august, september], paidAugustOnly)
 
     expect(totals.committedCents).toBe(60_000)
     // The bug this guards: agreed(300) − paid(300) would read as settled while
@@ -268,17 +269,17 @@ describe('a retainer accrues rather than working down a total', () => {
 
   it('settles only when every billed month is paid', () => {
     const paidBoth = [
-      txn({ id: 't1', invoiceId: 'i-aug', projectId: 'p-aura', amountCents: 30_000 }),
-      txn({ id: 't2', invoiceId: 'i-sep', projectId: 'p-aura', amountCents: 30_000 }),
+      txn({ id: 't1', invoiceId: 'i-aug', orderId: 'p-aura', amountCents: 30_000 }),
+      txn({ id: 't2', invoiceId: 'i-sep', orderId: 'p-aura', amountCents: 30_000 }),
     ]
 
-    expect(projectTotals(retainer, [august, september], paidBoth).status).toBe(
+    expect(orderTotals(retainer, [august, september], paidBoth).status).toBe(
       'fully_paid',
     )
   })
 
   it('has nothing "uninvoiced" — there is no total to invoice against', () => {
-    expect(projectTotals(retainer, [august], []).uninvoicedCents).toBe(0)
+    expect(orderTotals(retainer, [august], []).uninvoicedCents).toBe(0)
   })
 })
 
@@ -294,8 +295,8 @@ describe('recorded vs cleared', () => {
   })
 
   it('drops the client balance as soon as a payment is recorded', () => {
-    const p = project({ id: 'project-1', agreedAmountCents: 50_000 })
-    const totals = projectTotals(p, [], transactions)
+    const p = order({ id: 'order-1', agreedAmountCents: 50_000 })
+    const totals = orderTotals(p, [], transactions)
 
     expect(totals.balanceCents).toBe(0)
     expect(totals.status).toBe('fully_paid')
@@ -336,28 +337,28 @@ describe('derivePaymentStatus', () => {
 })
 
 describe('dashboard summary', () => {
-  const projects = [
-    project({ id: 'p1', agreedAmountCents: 40_000, commissionRate: 0.1 }),
-    project({ id: 'p2', agreedAmountCents: 15_000 }),
-    project({ id: 'p3', agreedAmountCents: 99_900, status: 'completed' }),
+  const orders = [
+    order({ id: 'p1', agreedAmountCents: 40_000, commissionRate: 0.1 }),
+    order({ id: 'p2', agreedAmountCents: 15_000 }),
+    order({ id: 'p3', agreedAmountCents: 99_900, status: 'completed' }),
   ]
 
   const invoices = [
-    invoice({ id: 'i1', projectId: 'p1', amountDueCents: 20_000, dueDate: '2026-03-01' }),
-    invoice({ id: 'i2', projectId: 'p2', amountDueCents: 15_000, dueDate: '2026-03-10' }),
-    invoice({ id: 'i3', projectId: 'p3', amountDueCents: 99_900, dueDate: '2026-01-01' }),
+    invoice({ id: 'i1', orderId: 'p1', amountDueCents: 20_000, dueDate: '2026-03-01' }),
+    invoice({ id: 'i2', orderId: 'p2', amountDueCents: 15_000, dueDate: '2026-03-10' }),
+    invoice({ id: 'i3', orderId: 'p3', amountDueCents: 99_900, dueDate: '2026-01-01' }),
   ]
 
   const transactions = [
-    txn({ id: 't1', invoiceId: 'i1', projectId: 'p1', amountCents: 20_000, status: 'pending' }),
+    txn({ id: 't1', invoiceId: 'i1', orderId: 'p1', amountCents: 20_000, status: 'pending' }),
   ]
 
-  const summary = dashboardSummary(projects, invoices, transactions, '2026-03-08')
+  const summary = dashboardSummary(orders, invoices, transactions, '2026-03-08')
 
-  it('ignores projects that are no longer active', () => {
-    expect(summary.activeProjects).toBe(2)
+  it('ignores orders that are no longer active', () => {
+    expect(summary.activeOrders).toBe(2)
     expect(summary.totalAgreedCents).toBe(55_000)
-    // p3's long-overdue invoice must not show up once the project is closed.
+    // p3's long-overdue invoice must not show up once the order is closed.
     expect(summary.overdueInvoices).toBe(0)
   })
 
@@ -373,9 +374,9 @@ describe('dashboard summary', () => {
 
   it('does not let one client overpaying mask another owing', () => {
     const overpaid = [
-      txn({ id: 't1', invoiceId: 'i1', projectId: 'p1', amountCents: 60_000 }),
+      txn({ id: 't1', invoiceId: 'i1', orderId: 'p1', amountCents: 60_000 }),
     ]
-    const withCredit = dashboardSummary(projects, invoices, overpaid, '2026-03-08')
+    const withCredit = dashboardSummary(orders, invoices, overpaid, '2026-03-08')
 
     // p1 is 200 in credit, p2 owes 150. Outstanding is 150, not zero.
     expect(withCredit.outstandingCents).toBe(15_000)
@@ -434,5 +435,67 @@ describe('invoice line items', () => {
 
   it('sums to zero for no lines', () => {
     expect(lineItemsTotalCents([])).toBe(0)
+  })
+})
+
+describe('order delivery dates', () => {
+  const withDue = (over: Partial<Order> & { id: string }) =>
+    order({ dueDate: '2026-09-10', ...over })
+
+  it('is overdue once the promised date has passed', () => {
+    expect(deliveryBucket(withDue({ id: 'o1' }), '2026-09-11')).toBe('overdue')
+  })
+
+  it('warns within the week, quiet before that', () => {
+    expect(deliveryBucket(withDue({ id: 'o1' }), '2026-09-04')).toBe('due_soon')
+    expect(deliveryBucket(withDue({ id: 'o1' }), '2026-09-02')).toBe('upcoming')
+  })
+
+  it('counts the due date itself as due, not overdue', () => {
+    expect(deliveryBucket(withDue({ id: 'o1' }), '2026-09-10')).toBe('due_soon')
+  })
+
+  it('stays quiet for an order with no promised date', () => {
+    expect(deliveryBucket(order({ id: 'o1' }), '2026-09-11')).toBe('none')
+  })
+
+  it('stops chasing once the order is completed or cancelled', () => {
+    expect(
+      deliveryBucket(withDue({ id: 'o1', status: 'completed' }), '2026-09-11'),
+    ).toBe('none')
+    expect(
+      deliveryBucket(withDue({ id: 'o1', status: 'cancelled' }), '2026-09-11'),
+    ).toBe('none')
+  })
+
+  it('is independent of whether the order is paid', () => {
+    // Paid in full, but still not delivered — the money side must not silence
+    // the delivery warning.
+    const o = withDue({ id: 'o1', agreedAmountCents: 10_000 })
+    const paid = [txn({ id: 't1', orderId: 'o1', amountCents: 10_000 })]
+
+    expect(orderTotals(o, [], paid).status).toBe('fully_paid')
+    expect(deliveryBucket(o, '2026-09-11')).toBe('overdue')
+  })
+})
+
+describe('dashboard delivery counts', () => {
+  const orders = [
+    order({ id: 'o1', dueDate: '2026-09-01' }),
+    order({ id: 'o2', dueDate: '2026-09-12' }),
+    order({ id: 'o3', dueDate: '2026-10-30' }),
+    order({ id: 'o4' }),
+    order({ id: 'o5', dueDate: '2026-09-01', status: 'completed' }),
+  ]
+
+  const summary = dashboardSummary(orders, [], [], '2026-09-08')
+
+  it('counts overdue and imminent deliveries, ignoring the rest', () => {
+    expect(summary.overdueDeliveries).toBe(1)
+    expect(summary.deliveriesDueSoon).toBe(1)
+  })
+
+  it('does not count a completed order as an overdue delivery', () => {
+    expect(summary.activeOrders).toBe(4)
   })
 })

@@ -10,7 +10,7 @@ changes and what it costs.
 
 ## The core idea
 
-`Project` (what was agreed) is kept separate from `Transaction` (what was
+`Order` (what was agreed) is kept separate from `Transaction` (what was
 actually paid). Every status is *derived* from summed transactions, never
 stored by hand, so a balance can't drift out of sync with its payments.
 
@@ -52,6 +52,19 @@ introduce a float into the money path.
 Currency is **LKR**, rendered `Rs 12,278.00`. That symbol is deliberately not
 `Intl` currency formatting, which renders LKR as the ISO code
 ("LKR 12,278.00"); see `CURRENCY_SYMBOL` in `src/lib/money.ts`.
+
+## Delivery dates vs payment dates
+
+An `Order` carries an optional `dueDate` — when the **work** is promised. Each
+`Invoice` carries its own `dueDate` — when the **money** is expected. They are
+deliberately independent: an order can be paid up front and still be overdue to
+deliver, or delivered on time and never paid.
+
+The dashboard reflects that with two separate lists: **Deliveries due** (orders,
+a week's warning) and **Needs chasing** (invoices, three days' warning, matching
+the scenario document's reminder window).
+
+One client can have any number of orders; each is billed and tracked on its own.
 
 ## Setup
 
@@ -135,7 +148,7 @@ rewrites all routes to `index.html` for client-side routing.
 
 ## Printing an invoice
 
-Every invoice has an **Invoice** button on the project page that opens a
+Every invoice has an **Invoice** button on the order page that opens a
 print-ready sheet at `/invoices/:id/print`, laid out to match the reference
 design in `doc/`. The browser's own print dialog saves it as a PDF — there is
 no PDF library in the bundle.
@@ -196,7 +209,7 @@ will cost:
 | --- | --- |
 | Auto-send invoices and receipts | WhatsApp Business API — a paid provider, per-conversation pricing |
 | Scheduled overdue reminders | Cloud Scheduler + Functions → **Blaze plan** (card required, small usage is free) |
-| Auto-generate retainer invoices on the 1st | Same as above; today it's a button on the project page |
+| Auto-generate retainer invoices on the 1st | Same as above; today it's a button on the order page |
 | Gateway payment links | A payment provider; would drive `Transaction.status` to `cleared` automatically |
 
 The `pending` / `cleared` distinction on transactions already exists precisely

@@ -6,13 +6,13 @@ import { useWorkspace } from '../data/WorkspaceProvider'
 import * as repo from '../data/repository'
 import { todayIso } from '../lib/calc'
 import { parseAmountToCents } from '../lib/money'
-import { BILLING_TYPE_HINTS, initialInvoices } from '../lib/invoicing'
+import { addDays, BILLING_TYPE_HINTS, initialInvoices } from '../lib/invoicing'
 import { Field, Modal } from '../components/ui'
 import { BILLING_TYPE_LABELS, type BillingType } from '../types/domain'
 
 const BILLING_TYPES = Object.keys(BILLING_TYPE_LABELS) as BillingType[]
 
-export function NewProjectModal({
+export function NewOrderModal({
   clientId,
   onClose,
 }: {
@@ -27,6 +27,7 @@ export function NewProjectModal({
   const [billingType, setBillingType] = useState<BillingType>('fixed_split')
   const [amount, setAmount] = useState('')
   const [commission, setCommission] = useState('0')
+  const [dueDate, setDueDate] = useState(addDays(todayIso(), 14))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -35,7 +36,7 @@ export function NewProjectModal({
     const commissionPercent = Number(commission)
 
     if (!title.trim()) {
-      setError('Give the project a title.')
+      setError('Give the order a title.')
       return
     }
     if (agreedAmountCents === null || agreedAmountCents === 0) {
@@ -51,19 +52,22 @@ export function NewProjectModal({
     setError(null)
 
     try {
-      const projectId = await repo.projects.create(ownerId, {
+      const orderId = await repo.orders.create(ownerId, {
         clientId,
         title: title.trim(),
         billingType,
         agreedAmountCents,
         commissionRate: commissionPercent / 100,
         status: 'active',
+        // Delivery deadline, distinct from the invoice payment dates that
+        // initialInvoices raises below.
+        ...(dueDate ? { dueDate } : {}),
       })
 
       // The billing type decides which invoices exist from day one; milestone
-      // projects intentionally start with none.
+      // orders intentionally start with none.
       const drafts = initialInvoices(
-        { id: projectId, clientId, billingType, agreedAmountCents },
+        { id: orderId, clientId, billingType, agreedAmountCents },
         todayIso(),
       )
       if (drafts.length > 0) {
@@ -72,16 +76,16 @@ export function NewProjectModal({
 
       await refresh()
       onClose()
-      navigate(`/projects/${projectId}`)
+      navigate(`/orders/${orderId}`)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not save project.')
+      setError(cause instanceof Error ? cause.message : 'Could not save order.')
       setBusy(false)
     }
   }
 
   return (
-    <Modal title="New project" onClose={onClose}>
-      <Field label="Project title">
+    <Modal title="New order" onClose={onClose}>
+      <Field label="Order title">
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
@@ -128,6 +132,17 @@ export function NewProjectModal({
         </Field>
       </div>
 
+      <Field
+        label="Delivery due date"
+        hint="When the work is promised. Separate from when payment is due."
+      >
+        <input
+          type="date"
+          value={dueDate}
+          onChange={(e) => setDueDate(e.target.value)}
+        />
+      </Field>
+
       {error && (
         <div className="banner banner--error" role="alert">
           {error}
@@ -137,7 +152,7 @@ export function NewProjectModal({
       <div className="modal__actions">
         <button onClick={onClose}>Cancel</button>
         <button className="btn--primary" onClick={save} disabled={busy}>
-          {busy ? 'Creating…' : 'Create project'}
+          {busy ? 'Creating…' : 'Create order'}
         </button>
       </div>
     </Modal>

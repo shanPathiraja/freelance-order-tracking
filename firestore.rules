@@ -35,7 +35,7 @@ service cloud.firestore {
       allow update: if ownsExisting() && ownsIncoming();
     }
 
-    match /projects/{projectId} {
+    match /orders/{orderId} {
       allow read, delete: if ownsExisting();
       allow create: if ownsIncoming()
         && hasMoney('agreedAmountCents')

@@ -9,7 +9,7 @@ import {
 } from './invoicing'
 import type { Invoice } from '../types/domain'
 
-const project = {
+const order = {
   id: 'p1',
   clientId: 'c1',
   agreedAmountCents: 30_000,
@@ -19,7 +19,7 @@ function invoice(over: Partial<Invoice> & { id: string }): Invoice {
   return {
     ownerId: 'o1',
     createdAt: 0,
-    projectId: 'p1',
+    orderId: 'p1',
     clientId: 'c1',
     label: 'Invoice',
     amountDueCents: 30_000,
@@ -48,9 +48,9 @@ describe('date arithmetic', () => {
 })
 
 describe('initialInvoices', () => {
-  it('splits a fixed project into an advance and a balance', () => {
+  it('splits a fixed order into an advance and a balance', () => {
     const drafts = initialInvoices(
-      { ...project, billingType: 'fixed_split', agreedAmountCents: 40_000 },
+      { ...order, billingType: 'fixed_split', agreedAmountCents: 40_000 },
       '2026-03-01',
     )
 
@@ -62,7 +62,7 @@ describe('initialInvoices', () => {
 
   it('splits an odd total without losing a cent', () => {
     const drafts = initialInvoices(
-      { ...project, billingType: 'fixed_split', agreedAmountCents: 15_001 },
+      { ...order, billingType: 'fixed_split', agreedAmountCents: 15_001 },
       '2026-03-01',
     )
 
@@ -72,7 +72,7 @@ describe('initialInvoices', () => {
 
   it('raises the current month for a retainer', () => {
     const [draft] = initialInvoices(
-      { ...project, billingType: 'monthly_retainer' },
+      { ...order, billingType: 'monthly_retainer' },
       '2026-03-17',
     )
 
@@ -83,7 +83,7 @@ describe('initialInvoices', () => {
 
   it('raises one invoice for pay-on-delivery', () => {
     const drafts = initialInvoices(
-      { ...project, billingType: 'on_delivery' },
+      { ...order, billingType: 'on_delivery' },
       '2026-03-01',
     )
 
@@ -91,22 +91,22 @@ describe('initialInvoices', () => {
     expect(drafts[0].amountDueCents).toBe(30_000)
   })
 
-  it('raises nothing for a milestone project', () => {
+  it('raises nothing for a milestone order', () => {
     expect(
-      initialInvoices({ ...project, billingType: 'milestone' }, '2026-03-01'),
+      initialInvoices({ ...order, billingType: 'milestone' }, '2026-03-01'),
     ).toEqual([])
   })
 })
 
 describe('nextRetainerInvoice', () => {
   it('bills the current month when nothing has been raised', () => {
-    const draft = nextRetainerInvoice(project, [], '2026-03-17')
+    const draft = nextRetainerInvoice(order, [], '2026-03-17')
     expect(draft?.periodKey).toBe('2026-03')
   })
 
   it('moves to next month once this one is raised', () => {
     const existing = [invoice({ id: 'i1', periodKey: '2026-03' })]
-    const draft = nextRetainerInvoice(project, existing, '2026-03-17')
+    const draft = nextRetainerInvoice(order, existing, '2026-03-17')
 
     expect(draft?.periodKey).toBe('2026-04')
     expect(draft?.dueDate).toBe('2026-04-01')
@@ -115,16 +115,16 @@ describe('nextRetainerInvoice', () => {
   it('catches up a month the freelancer forgot to bill', () => {
     // April was raised but March never was — March should still be billed.
     const existing = [invoice({ id: 'i1', periodKey: '2026-04' })]
-    const draft = nextRetainerInvoice(project, existing, '2026-03-17')
+    const draft = nextRetainerInvoice(order, existing, '2026-03-17')
 
     expect(draft?.periodKey).toBe('2026-03')
   })
 
-  it('ignores invoices belonging to a different project', () => {
+  it('ignores invoices belonging to a different order', () => {
     const existing = [
-      invoice({ id: 'i1', projectId: 'other', periodKey: '2026-03' }),
+      invoice({ id: 'i1', orderId: 'other', periodKey: '2026-03' }),
     ]
-    const draft = nextRetainerInvoice(project, existing, '2026-03-17')
+    const draft = nextRetainerInvoice(order, existing, '2026-03-17')
 
     expect(draft?.periodKey).toBe('2026-03')
   })

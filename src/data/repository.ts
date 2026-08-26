@@ -26,13 +26,13 @@ import type {
   BusinessProfile,
   Client,
   Invoice,
-  Project,
+  Order,
   Transaction,
 } from '../types/domain'
 
 export const COLLECTIONS = {
   clients: 'clients',
-  projects: 'projects',
+  orders: 'orders',
   invoices: 'invoices',
   transactions: 'transactions',
   settings: 'settings',
@@ -74,12 +74,12 @@ export const clients = {
     updateDoc(doc(db, COLLECTIONS.clients, id), data),
 }
 
-export const projects = {
-  list: (ownerId: string) => listOwned<Project>(COLLECTIONS.projects, ownerId),
-  create: (ownerId: string, data: NewRecord<Project>) =>
-    createOwned<Project>(COLLECTIONS.projects, ownerId, data),
-  update: (id: string, data: Partial<NewRecord<Project>>) =>
-    updateDoc(doc(db, COLLECTIONS.projects, id), data),
+export const orders = {
+  list: (ownerId: string) => listOwned<Order>(COLLECTIONS.orders, ownerId),
+  create: (ownerId: string, data: NewRecord<Order>) =>
+    createOwned<Order>(COLLECTIONS.orders, ownerId, data),
+  update: (id: string, data: Partial<NewRecord<Order>>) =>
+    updateDoc(doc(db, COLLECTIONS.orders, id), data),
 }
 
 export const invoices = {
@@ -137,10 +137,10 @@ export const businessProfile = {
  * and it keeps well inside the Spark plan's daily read allowance.
  */
 export async function loadWorkspace(ownerId: string) {
-  const [clientList, projectList, invoiceList, transactionList, profile] =
+  const [clientList, orderList, invoiceList, transactionList, profile] =
     await Promise.all([
       clients.list(ownerId),
-      projects.list(ownerId),
+      orders.list(ownerId),
       invoices.list(ownerId),
       transactions.list(ownerId),
       businessProfile.get(ownerId),
@@ -148,7 +148,7 @@ export async function loadWorkspace(ownerId: string) {
 
   return {
     clients: clientList,
-    projects: projectList,
+    orders: orderList,
     invoices: invoiceList,
     transactions: transactionList,
     profile,
@@ -159,7 +159,7 @@ export type Workspace = Awaited<ReturnType<typeof loadWorkspace>>
 
 export const EMPTY_WORKSPACE: Workspace = {
   clients: [],
-  projects: [],
+  orders: [],
   invoices: [],
   transactions: [],
   profile: null,

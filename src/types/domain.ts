@@ -7,11 +7,11 @@
  * strings so they carry no timezone; machine timestamps are epoch millis.
  */
 
-/** How a project's total is broken into invoices. */
+/** How an order's total is broken into invoices. */
 export type BillingType =
   /** Fixed price split across two invoices, e.g. 50% advance + 50% on delivery. */
   | 'fixed_split'
-  /** One invoice per delivered milestone, amounts set as the project progresses. */
+  /** One invoice per delivered milestone, amounts set as the order progresses. */
   | 'milestone'
   /** One invoice per calendar month for ongoing work. */
   | 'monthly_retainer'
@@ -31,7 +31,7 @@ export type TransactionStatus = 'pending' | 'cleared'
 
 export type PaymentMethod = 'bank_transfer' | 'cash' | 'card' | 'other'
 
-export type ProjectStatus = 'active' | 'completed' | 'cancelled'
+export type OrderStatus = 'active' | 'completed' | 'cancelled'
 
 /** Fields every record carries. `ownerId` is what the Firestore rules match on. */
 interface OwnedRecord {
@@ -48,7 +48,7 @@ export interface Client extends OwnedRecord {
   notes?: string
 }
 
-export interface Project extends OwnedRecord {
+export interface Order extends OwnedRecord {
   clientId: string
   title: string
   billingType: BillingType
@@ -56,7 +56,19 @@ export interface Project extends OwnedRecord {
   agreedAmountCents: number
   /** Agency cut taken off the freelancer's payout, 0–1. 0 means solo. */
   commissionRate: number
-  status: ProjectStatus
+  status: OrderStatus
+  /**
+   * When the work is due to be delivered, as ISO 'YYYY-MM-DD'.
+   *
+   * This is a *delivery* deadline and has nothing to do with when money is
+   * due — that lives on each Invoice. An order can be delivered on time and
+   * still be unpaid, or paid up front and overdue for delivery, so the
+   * dashboard tracks the two separately.
+   *
+   * Optional: not every order has a promised date, and orders created before
+   * this field existed have none.
+   */
+  dueDate?: string
   notes?: string
 }
 
@@ -74,8 +86,8 @@ export interface InvoiceLineItem {
 }
 
 export interface Invoice extends OwnedRecord {
-  projectId: string
-  /** Denormalised so the dashboard can query invoices without loading projects. */
+  orderId: string
+  /** Denormalised so the dashboard can query invoices without loading orders. */
   clientId: string
   /** Human label: '50% Advance', 'Milestone 2 — Brand guidelines', 'March 2026'. */
   label: string
@@ -118,7 +130,7 @@ export const EMPTY_BUSINESS_PROFILE: BusinessProfile = {
 export interface Transaction extends OwnedRecord {
   invoiceId: string
   /** Denormalised for the same reason as Invoice.clientId. */
-  projectId: string
+  orderId: string
   clientId: string
   amountCents: number
   /** ISO 'YYYY-MM-DD' — the day the client actually paid. */

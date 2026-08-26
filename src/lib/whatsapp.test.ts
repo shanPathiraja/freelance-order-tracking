@@ -8,7 +8,7 @@ import {
   receiptMessage,
   waLink,
 } from './whatsapp'
-import type { Client, Invoice, Project, Transaction } from '../types/domain'
+import type { Client, Invoice, Order, Transaction } from '../types/domain'
 
 const client: Client = {
   id: 'c1',
@@ -18,7 +18,7 @@ const client: Client = {
   whatsapp: '94771234567',
 }
 
-const project: Project = {
+const order: Order = {
   id: 'p1',
   ownerId: 'o1',
   createdAt: 0,
@@ -34,7 +34,7 @@ const invoice: Invoice = {
   id: 'i1',
   ownerId: 'o1',
   createdAt: 0,
-  projectId: 'p1',
+  orderId: 'p1',
   clientId: 'c1',
   label: 'Balance on delivery',
   amountDueCents: 20_000,
@@ -46,7 +46,7 @@ const transaction: Transaction = {
   ownerId: 'o1',
   createdAt: 0,
   invoiceId: 'i1',
-  projectId: 'p1',
+  orderId: 'p1',
   clientId: 'c1',
   amountCents: 20_000,
   paidOn: '2026-08-11',
@@ -104,11 +104,11 @@ describe('waLink', () => {
   })
 
   it('produces a parseable URL and round-trips the message intact', () => {
-    const message = invoiceRequestMessage(client, project, invoice, 20_000)
+    const message = invoiceRequestMessage(client, order, invoice, 20_000)
     const url = new URL(waLink(client.whatsapp, message))
 
     expect(url.origin).toBe('https://wa.me')
-    // The ampersand in the project title must not split the query string.
+    // The ampersand in the order title must not split the query string.
     expect(url.searchParams.get('text')).toBe(message)
   })
 
@@ -127,29 +127,29 @@ describe('waLink', () => {
 
 describe('message wording', () => {
   it('greets the client by full name, not a first word', () => {
-    const message = invoiceRequestMessage(client, project, invoice, 20_000)
+    const message = invoiceRequestMessage(client, order, invoice, 20_000)
     expect(message).toContain('Hi Burger Craft,')
   })
 
   it('states the amount and a human-readable due date', () => {
-    const message = invoiceRequestMessage(client, project, invoice, 20_000)
+    const message = invoiceRequestMessage(client, order, invoice, 20_000)
     expect(message).toContain('Rs 200.00')
     expect(message).toContain('18 August 2026')
   })
 
   it('reports the outstanding balance separately after a part payment', () => {
-    const message = invoiceRequestMessage(client, project, invoice, 5_000)
+    const message = invoiceRequestMessage(client, order, invoice, 5_000)
     expect(message).toContain('Outstanding on this invoice: *Rs 50.00*')
   })
 
   it('tells the client they are settled when nothing remains', () => {
-    const message = receiptMessage(client, project, transaction, 0)
+    const message = receiptMessage(client, order, transaction, 0)
     expect(message).toContain('fully settled')
     expect(message).not.toContain('Remaining balance')
   })
 
   it('states the remaining balance when money is still owed', () => {
-    const message = receiptMessage(client, project, transaction, 20_000)
+    const message = receiptMessage(client, order, transaction, 20_000)
     expect(message).toContain('Remaining balance: *Rs 200.00*')
   })
 })

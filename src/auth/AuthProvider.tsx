@@ -30,7 +30,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(isFirebaseConfigured)
 
   useEffect(() => {
-    // Without a project to talk to there is no session to wait for.
+    // Without an order to talk to there is no session to wait for.
     if (!isFirebaseConfigured) return
 
     return onAuthStateChanged(auth, (nextUser) => {

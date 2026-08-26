@@ -13,12 +13,12 @@ import { ClientsPage } from './pages/ClientsPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { LoginPage } from './pages/LoginPage'
 import { InvoicePrintPage } from './pages/InvoicePrintPage'
-import { ProjectPage } from './pages/ProjectPage'
+import { OrderPage } from './pages/OrderPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { SetupPage } from './pages/SetupPage'
 
 export default function App() {
-  // No project configured means nothing else can work — say so plainly rather
+  // No order configured means nothing else can work — say so plainly rather
   // than showing a login form that could never succeed.
   if (!isFirebaseConfigured) return <SetupPage />
 
@@ -86,7 +86,7 @@ function AppShell() {
         <Routes>
           <Route path="/" element={<DashboardPage />} />
           <Route path="/clients" element={<ClientsPage />} />
-          <Route path="/projects/:projectId" element={<ProjectPage />} />
+          <Route path="/orders/:orderId" element={<OrderPage />} />
           <Route
             path="/invoices/:invoiceId/print"
             element={<InvoicePrintPage />}

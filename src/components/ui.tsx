@@ -5,7 +5,7 @@ import {
   PAYMENT_STATUS_LABELS,
   type PaymentStatus,
 } from '../types/domain'
-import type { DueBucket } from '../lib/calc'
+import type { DeliveryBucket, DueBucket } from '../lib/calc'
 
 export function StatusPill({ status }: { status: PaymentStatus }) {
   return (
@@ -22,6 +22,19 @@ const BUCKET_LABELS: Partial<Record<DueBucket, string>> = {
 
 export function DuePill({ bucket }: { bucket: DueBucket }) {
   const label = BUCKET_LABELS[bucket]
+  if (!label) return null
+
+  return <span className={`pill pill--${bucket}`}>{label}</span>
+}
+
+const DELIVERY_LABELS: Partial<Record<DeliveryBucket, string>> = {
+  overdue: 'Late',
+  due_soon: 'Due soon',
+}
+
+/** Delivery urgency for an order — distinct from an invoice's payment status. */
+export function DeliveryPill({ bucket }: { bucket: DeliveryBucket }) {
+  const label = DELIVERY_LABELS[bucket]
   if (!label) return null
 
   return <span className={`pill pill--${bucket}`}>{label}</span>

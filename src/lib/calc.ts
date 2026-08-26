@@ -16,7 +16,7 @@ import type {
   Invoice,
   InvoiceLineItem,
   PaymentStatus,
-  Project,
+  Order,
   Transaction,
 } from '../types/domain'
 import { percentOfCents } from './money'
@@ -87,17 +87,17 @@ export function invoiceTotals(
   }
 }
 
-export interface ProjectTotals {
-  projectId: string
+export interface OrderTotals {
+  orderId: string
   /**
    * What the client is on the hook for. For a fixed, milestone or on-delivery
-   * project that is the agreed total. For a retainer there is no total —
+   * order that is the agreed total. For a retainer there is no total —
    * `agreedAmountCents` is a monthly rate — so it is the sum of the months
    * actually invoiced.
    */
   committedCents: number
   agreedAmountCents: number
-  /** Σ of invoices raised so far — can trail the agreed total mid-project. */
+  /** Σ of invoices raised so far — can trail the agreed total mid-order. */
   invoicedCents: number
   /** Agreed total not yet written onto any invoice. Always 0 for a retainer. */
   uninvoicedCents: number
@@ -110,35 +110,35 @@ export interface ProjectTotals {
   status: PaymentStatus
 }
 
-export function projectTotals(
-  project: Project,
+export function orderTotals(
+  order: Order,
   invoices: Invoice[],
   transactions: Transaction[],
-): ProjectTotals {
-  const forProject = invoices.filter((i) => i.projectId === project.id)
-  const txns = transactions.filter((t) => t.projectId === project.id)
+): OrderTotals {
+  const forOrder = invoices.filter((i) => i.orderId === order.id)
+  const txns = transactions.filter((t) => t.orderId === order.id)
 
-  const invoicedCents = forProject.reduce((sum, i) => sum + i.amountDueCents, 0)
+  const invoicedCents = forOrder.reduce((sum, i) => sum + i.amountDueCents, 0)
   const paidCents = recordedTotalCents(txns)
   const clearedCents = clearedTotalCents(txns)
 
   // A retainer is open-ended: it accrues a new obligation every month rather
   // than working down a fixed total, so what's owed is what's been billed.
-  const isRetainer = project.billingType === 'monthly_retainer'
-  const committedCents = isRetainer ? invoicedCents : project.agreedAmountCents
+  const isRetainer = order.billingType === 'monthly_retainer'
+  const committedCents = isRetainer ? invoicedCents : order.agreedAmountCents
 
   return {
-    projectId: project.id,
+    orderId: order.id,
     committedCents,
-    agreedAmountCents: project.agreedAmountCents,
+    agreedAmountCents: order.agreedAmountCents,
     invoicedCents,
     uninvoicedCents: isRetainer
       ? 0
-      : Math.max(project.agreedAmountCents - invoicedCents, 0),
+      : Math.max(order.agreedAmountCents - invoicedCents, 0),
     paidCents,
     clearedCents,
     balanceCents: committedCents - paidCents,
-    payoutCents: freelancerPayoutCents(clearedCents, project.commissionRate),
+    payoutCents: freelancerPayoutCents(clearedCents, order.commissionRate),
     status: derivePaymentStatus(committedCents, paidCents),
   }
 }
@@ -201,6 +201,30 @@ export function dueBucket(
     : 'upcoming'
 }
 
+/**
+ * How urgently an order needs *delivering*. Separate from `dueBucket`, which
+ * is about money: an order can be fully paid and still overdue for delivery.
+ *
+ * 'none' covers both "no promised date" and "no longer active" — in either
+ * case there is nothing to chase.
+ */
+export type DeliveryBucket = 'overdue' | 'due_soon' | 'upcoming' | 'none'
+
+export function deliveryBucket(
+  order: Order,
+  today: string,
+  // A week, not the three days used for payment reminders: design work needs
+  // more notice than a bank transfer does.
+  soonWindowDays = 7,
+): DeliveryBucket {
+  if (!order.dueDate || order.status !== 'active') return 'none'
+  if (order.dueDate < today) return 'overdue'
+
+  return daysBetween(today, order.dueDate) <= soonWindowDays
+    ? 'due_soon'
+    : 'upcoming'
+}
+
 /** Whole days from one ISO date to another. Negative if `to` is earlier. */
 export function daysBetween(from: string, to: string): number {
   const msPerDay = 24 * 60 * 60 * 1000
@@ -221,46 +245,53 @@ export function periodKeyOf(date: string): string {
 }
 
 export interface DashboardSummary {
-  /** Σ committed amounts across active projects — the book of work. */
+  /** Σ committed amounts across active orders — the book of work. */
   totalAgreedCents: number
   /** Σ every recorded payment. */
   collectedCents: number
   /** Σ payments still marked pending, i.e. logged but not in the bank. */
   pendingClearanceCents: number
-  /** Σ outstanding balances across active projects. */
+  /** Σ outstanding balances across active orders. */
   outstandingCents: number
   /** What the freelancer has actually earned, net of commission. */
   payoutCents: number
   overdueInvoices: number
   dueSoonInvoices: number
-  activeProjects: number
+  /** Active orders whose delivery date has passed. */
+  overdueDeliveries: number
+  /** Active orders due for delivery within the week. */
+  deliveriesDueSoon: number
+  activeOrders: number
 }
 
 export function dashboardSummary(
-  projects: Project[],
+  orders: Order[],
   invoices: Invoice[],
   transactions: Transaction[],
   today: string,
 ): DashboardSummary {
-  const active = projects.filter((p) => p.status === 'active')
-  const totals = active.map((p) => projectTotals(p, invoices, transactions))
+  const active = orders.filter((p) => p.status === 'active')
+  const totals = active.map((p) => orderTotals(p, invoices, transactions))
 
-  const activeProjectIds = new Set(active.map((p) => p.id))
-  const activeInvoices = invoices.filter((i) => activeProjectIds.has(i.projectId))
+  const activeOrderIds = new Set(active.map((p) => p.id))
+  const activeInvoices = invoices.filter((i) => activeOrderIds.has(i.orderId))
 
   const buckets = activeInvoices.map((i) => dueBucket(i, transactions, today))
+  const deliveries = active.map((o) => deliveryBucket(o, today))
 
   return {
     totalAgreedCents: sumBy(totals, (t) => t.committedCents),
     collectedCents: sumBy(totals, (t) => t.paidCents),
     pendingClearanceCents: sumBy(totals, (t) => t.paidCents - t.clearedCents),
-    // A negative balance is a credit on one project; it must not quietly cancel
+    // A negative balance is a credit on one order; it must not quietly cancel
     // out real debt on another, so overpayments are floored at zero here.
     outstandingCents: sumBy(totals, (t) => Math.max(t.balanceCents, 0)),
     payoutCents: sumBy(totals, (t) => t.payoutCents),
     overdueInvoices: buckets.filter((b) => b === 'overdue').length,
     dueSoonInvoices: buckets.filter((b) => b === 'due_soon').length,
-    activeProjects: active.length,
+    overdueDeliveries: deliveries.filter((b) => b === 'overdue').length,
+    deliveriesDueSoon: deliveries.filter((b) => b === 'due_soon').length,
+    activeOrders: active.length,
   }
 }
 

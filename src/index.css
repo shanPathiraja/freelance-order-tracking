@@ -273,6 +273,9 @@ tbody tr:last-child td {
 .num {
   text-align: right;
   font-variant-numeric: tabular-nums;
+  /* "Rs 5,000.00" must not break after the symbol — the ledger is wide enough
+     that the browser will happily wrap it otherwise. */
+  white-space: nowrap;
 }
 
 .row-link {
@@ -691,7 +694,7 @@ button:disabled {
   content: ' :';
 }
 
-.sheet__project {
+.sheet__order {
   padding: 0 12mm 0.5rem;
   font-size: 10pt;
   font-style: italic;

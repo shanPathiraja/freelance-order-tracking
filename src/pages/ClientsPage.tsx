@@ -4,34 +4,34 @@ import { Link } from 'react-router-dom'
 import { useOwnerId } from '../auth/AuthProvider'
 import { useWorkspace } from '../data/WorkspaceProvider'
 import * as repo from '../data/repository'
-import { projectTotals } from '../lib/calc'
+import { orderTotals } from '../lib/calc'
 import { formatCents } from '../lib/money'
 import {
   isUsableWhatsAppNumber,
   normalisePhone,
 } from '../lib/whatsapp'
 import { EmptyState, Field, Modal, Money, StatusPill } from '../components/ui'
-import { NewProjectModal } from './NewProjectModal'
+import { NewOrderModal } from './NewOrderModal'
 import { BILLING_TYPE_LABELS, type Client } from '../types/domain'
 
 export function ClientsPage() {
-  const { clients, projects, invoices, transactions, loading } = useWorkspace()
+  const { clients, orders, invoices, transactions, loading } = useWorkspace()
   // null = closed, 'new' = create, otherwise the client being edited.
   const [clientForm, setClientForm] = useState<Client | 'new' | null>(null)
-  const [projectForClient, setProjectForClient] = useState<string | null>(null)
+  const [orderForClient, setOrderForClient] = useState<string | null>(null)
 
   const rows = useMemo(
     () =>
       clients
         .map((client) => {
-          const theirProjects = projects.filter((p) => p.clientId === client.id)
-          const totals = theirProjects.map((p) =>
-            projectTotals(p, invoices, transactions),
+          const theirOrders = orders.filter((p) => p.clientId === client.id)
+          const totals = theirOrders.map((p) =>
+            orderTotals(p, invoices, transactions),
           )
 
           return {
             client,
-            projects: theirProjects,
+            orders: theirOrders,
             outstandingCents: totals.reduce(
               (sum, t) => sum + Math.max(t.balanceCents, 0),
               0,
@@ -39,7 +39,7 @@ export function ClientsPage() {
           }
         })
         .sort((a, b) => a.client.name.localeCompare(b.client.name)),
-    [clients, projects, invoices, transactions],
+    [clients, orders, invoices, transactions],
   )
 
   if (loading) return <div className="page"><div className="empty">Loading…</div></div>
@@ -65,7 +65,7 @@ export function ClientsPage() {
           </EmptyState>
         </div>
       ) : (
-        rows.map(({ client, projects: theirProjects, outstandingCents }) => (
+        rows.map(({ client, orders: theirOrders, outstandingCents }) => (
           <section className="card" key={client.id}>
             <div className="card__title">
               <h2>{client.name}</h2>
@@ -79,9 +79,9 @@ export function ClientsPage() {
               </button>
               <button
                 className="btn--sm"
-                onClick={() => setProjectForClient(client.id)}
+                onClick={() => setOrderForClient(client.id)}
               >
-                New project
+                New order
               </button>
             </div>
 
@@ -97,14 +97,14 @@ export function ClientsPage() {
               {client.email ? ` · ${client.email}` : ''}
             </p>
 
-            {theirProjects.length === 0 ? (
-              <EmptyState>No projects for this client yet.</EmptyState>
+            {theirOrders.length === 0 ? (
+              <EmptyState>No orders for this client yet.</EmptyState>
             ) : (
               <div className="table-wrap">
                 <table>
                   <thead>
                     <tr>
-                      <th>Project</th>
+                      <th>Order</th>
                       <th>Billing</th>
                       <th className="num">Agreed</th>
                       <th className="num">Balance</th>
@@ -112,20 +112,20 @@ export function ClientsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {theirProjects.map((project) => {
-                      const totals = projectTotals(project, invoices, transactions)
+                    {theirOrders.map((order) => {
+                      const totals = orderTotals(order, invoices, transactions)
                       return (
-                        <tr key={project.id}>
+                        <tr key={order.id}>
                           <td>
-                            <Link className="row-link" to={`/projects/${project.id}`}>
-                              {project.title}
+                            <Link className="row-link" to={`/orders/${order.id}`}>
+                              {order.title}
                             </Link>
-                            {project.status !== 'active' && (
-                              <span className="muted"> ({project.status})</span>
+                            {order.status !== 'active' && (
+                              <span className="muted"> ({order.status})</span>
                             )}
                           </td>
                           <td className="muted">
-                            {BILLING_TYPE_LABELS[project.billingType]}
+                            {BILLING_TYPE_LABELS[order.billingType]}
                           </td>
                           <td className="num">
                             {formatCents(totals.committedCents)}
@@ -153,10 +153,10 @@ export function ClientsPage() {
           onClose={() => setClientForm(null)}
         />
       )}
-      {projectForClient && (
-        <NewProjectModal
-          clientId={projectForClient}
-          onClose={() => setProjectForClient(null)}
+      {orderForClient && (
+        <NewOrderModal
+          clientId={orderForClient}
+          onClose={() => setOrderForClient(null)}
         />
       )}
     </div>
