@@ -1,0 +1,115 @@
+name: CI
+
+# Every push and PR gets checked. Only main deploys.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+# A second push to the same branch makes the first one irrelevant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Lint, typecheck, test, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # `npm ci` installs strictly from the lockfile, which also sidesteps the
+      # npm arborist crash that hits when the tree is resolved from scratch.
+      - run: npm ci
+
+      - run: npm run lint
+
+      # Type errors must fail the build, not just the editor.
+      - run: npx tsc -b
+
+      - run: npm test
+
+      # No Firebase config here on purpose: this proves the app compiles
+      # without it. The deploy job builds again with the real values.
+      - run: npm run build
+
+  deploy:
+    name: Deploy to Firebase Hosting
+    needs: check
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    # Serialise deploys so two pushes cannot race to release.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build with the live Firebase config
+        env:
+          # Not secrets — a web app's Firebase config ships to the browser by
+          # design. They are repository *variables* so they stay out of the
+          # repo without pretending to be sensitive.
+          VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
+          VITE_USE_EMULATORS: 'false'
+        run: npm run build
+
+      # Without this the pipeline would happily ship a bundle with no Firebase
+      # config — which builds fine and then shows every visitor the setup
+      # screen. Fail here instead of finding out in production.
+      - name: Verify the config reached the bundle
+        env:
+          EXPECTED_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
+        run: |
+          if [ -z "$EXPECTED_PROJECT_ID" ]; then
+            echo "::error::VITE_FIREBASE_PROJECT_ID repository variable is not set."
+            echo "Set the VITE_FIREBASE_* variables under Settings -> Secrets and variables -> Actions -> Variables."
+            exit 1
+          fi
+          if ! grep -rq "$EXPECTED_PROJECT_ID" dist/assets; then
+            echo "::error::Built bundle does not contain $EXPECTED_PROJECT_ID — the app would show the setup screen."
+            exit 1
+          fi
+          echo "Config for $EXPECTED_PROJECT_ID is present in the bundle."
+
+      # Written via an env var rather than inline interpolation, so the JSON
+      # cannot be mangled by the shell or leak through a command echo.
+      - name: Authenticate to Firebase
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$FIREBASE_SERVICE_ACCOUNT" ]; then
+            echo "::error::FIREBASE_SERVICE_ACCOUNT secret is not set. See doc/ci-cd.md."
+            exit 1
+          fi
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/service-account.json"
+
+      - name: Deploy hosting and security rules
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/service-account.json
+        run: |
+          npx firebase-tools@latest deploy \
+            --only hosting,firestore:rules \
+            --non-interactive \
+            --message "${{ github.sha }}"
+
+      - name: Remove credentials
+        if: always()
+        run: rm -f "$RUNNER_TEMP/service-account.json"

@@ -179,6 +179,12 @@ can never reach a real project). Run `npm run dev` in a second terminal.
 
 ## Deploying
 
+Pushing to `main` deploys automatically — see [doc/ci-cd.md](doc/ci-cd.md).
+Tests gate the release, and the pipeline refuses to ship a bundle that is
+missing its Firebase config.
+
+To deploy by hand:
+
 ```bash
 npm run build
 npx firebase-tools deploy --only hosting
