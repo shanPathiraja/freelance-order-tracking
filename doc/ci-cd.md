@@ -30,11 +30,37 @@ service account, and adds it as the `FIREBASE_SERVICE_ACCOUNT` secret.
 **Say no when it offers to set up workflow files** — it would overwrite the one
 in this repo with its own.
 
-If you would rather do it by hand: Google Cloud console → IAM → Service
-Accounts → create a key (JSON) with the **Firebase Hosting Admin** and
-**Cloud Datastore Owner** roles, then paste the whole JSON file into
-GitHub → Settings → Secrets and variables → Actions → **Secrets** →
-`FIREBASE_SERVICE_ACCOUNT`.
+#### If `init hosting:github` fails
+
+It can fail with a 404 on the service account it just created — IAM is
+eventually consistent, and the CLI reads the account back before it has
+propagated:
+
+```
+Error: ... serviceAccounts/github-action-… does not exist
+```
+
+Running it again usually works. If it does not, do it by hand — it is four
+steps and more predictable:
+
+1. [Service accounts](https://console.cloud.google.com/iam-admin/serviceaccounts?project=freelancer-tracking-system)
+   → delete any half-created `github-action-…` account from the failed run.
+2. **Create service account**, name it `github-deploy`.
+3. Grant it two roles:
+   - **Firebase Hosting Admin** — deploys the site.
+   - **Firebase Rules Admin** — releases `firestore.rules`.
+   If a deploy later complains about permissions, **Firebase Admin** covers
+   everything, at the cost of being much broader than this needs.
+4. On that account → **Keys** → **Add key** → **Create new key** → JSON.
+   Paste the entire file into GitHub → Settings → Secrets and variables →
+   Actions → **Secrets** → `FIREBASE_SERVICE_ACCOUNT`.
+
+The key is a long-lived credential with deploy rights to the project. Treat it
+like a password: it belongs only in the GitHub secret, never in the repo.
+
+If the 404 persists even on retry, the
+[IAM API](https://console.cloud.google.com/apis/library/iam.googleapis.com?project=freelancer-tracking-system)
+may not be enabled on the project. Enable it, wait a minute, and retry.
 
 ### 2. The web config (repository variables)
 
