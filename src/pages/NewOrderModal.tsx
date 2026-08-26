@@ -28,6 +28,7 @@ export function NewOrderModal({
   const [amount, setAmount] = useState('')
   const [commission, setCommission] = useState('0')
   const [dueDate, setDueDate] = useState(addDays(todayIso(), 14))
+  const [dueTime, setDueTime] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -62,6 +63,7 @@ export function NewOrderModal({
         // Delivery deadline, distinct from the invoice payment dates that
         // initialInvoices raises below.
         ...(dueDate ? { dueDate } : {}),
+        ...(dueDate && dueTime ? { dueTime } : {}),
       })
 
       // The billing type decides which invoices exist from day one; milestone
@@ -132,16 +134,26 @@ export function NewOrderModal({
         </Field>
       </div>
 
-      <Field
-        label="Delivery due date"
-        hint="When the work is promised. Separate from when payment is due."
-      >
-        <input
-          type="date"
-          value={dueDate}
-          onChange={(e) => setDueDate(e.target.value)}
-        />
-      </Field>
+      <div className="field-row">
+        <Field
+          label="Delivery due date"
+          hint="When the work is promised. Separate from when payment is due."
+        >
+          <input
+            type="date"
+            value={dueDate}
+            onChange={(e) => setDueDate(e.target.value)}
+          />
+        </Field>
+
+        <Field label="Time (optional)" hint="Leave blank for end of day.">
+          <input
+            type="time"
+            value={dueTime}
+            onChange={(e) => setDueTime(e.target.value)}
+          />
+        </Field>
+      </div>
 
       {error && (
         <div className="banner banner--error" role="alert">

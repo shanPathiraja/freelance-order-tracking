@@ -977,3 +977,16 @@ button:disabled {
   background: var(--surface);
   color: var(--text);
 }
+
+/* ---------- countdown ---------- */
+
+.countdown {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.countdown.is-late {
+  color: var(--unpaid);
+}

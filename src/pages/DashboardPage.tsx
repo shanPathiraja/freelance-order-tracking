@@ -4,14 +4,16 @@ import { Link } from 'react-router-dom'
 import { useWorkspace } from '../data/WorkspaceProvider'
 import {
   dashboardSummary,
-  daysBetween,
   deliveryBucket,
   dueBucket,
+  formatRemaining,
   invoiceTotals,
   orderTotals,
+  remainingMs,
   todayIso,
   type DueBucket,
 } from '../lib/calc'
+import { useNow } from '../lib/useNow'
 import { formatCents } from '../lib/money'
 import {
   formatDateForHumans,
@@ -34,11 +36,13 @@ import { BILLING_TYPE_LABELS, isOpenOrder } from '../types/domain'
 export function DashboardPage() {
   const { clients, orders, invoices, transactions, loading, error } =
     useWorkspace()
-  const today = todayIso()
+  // One ticking clock for the whole page — every countdown reads from it.
+  const now = useNow()
+  const today = todayIso(now)
 
   const summary = useMemo(
-    () => dashboardSummary(orders, invoices, transactions, today),
-    [orders, invoices, transactions, today],
+    () => dashboardSummary(orders, invoices, transactions, now),
+    [orders, invoices, transactions, now],
   )
 
   /**
@@ -77,12 +81,12 @@ export function DashboardPage() {
       orders
         .map((order) => ({
           order,
-          bucket: deliveryBucket(order, today),
+          bucket: deliveryBucket(order, now),
           client: clients.find((c) => c.id === order.clientId),
         }))
         .filter((row) => row.bucket === 'overdue' || row.bucket === 'due_soon')
         .sort((a, b) => (a.order.dueDate ?? '').localeCompare(b.order.dueDate ?? '')),
-    [clients, orders, today],
+    [clients, orders, now],
   )
 
   /** Section 3 of the scenario document: one row per active order. */
@@ -174,7 +178,7 @@ export function DashboardPage() {
               </thead>
               <tbody>
                 {deliveries.map(({ order, bucket, client }) => {
-                  const days = daysBetween(today, order.dueDate ?? today)
+                  const left = remainingMs(order, now)
                   return (
                     <tr key={order.id}>
                       <td>{client?.name ?? '—'}</td>
@@ -185,11 +189,20 @@ export function DashboardPage() {
                       </td>
                       <td>
                         <div className="inline-list">
-                          <span>{formatDateForHumans(order.dueDate ?? '')}</span>
+                          <span>
+                            {formatDateForHumans(order.dueDate ?? '')}
+                            {order.dueTime && ` at ${order.dueTime}`}
+                          </span>
                           <DeliveryPill bucket={bucket} />
                         </div>
                       </td>
-                      <td className="muted">{describeDays(days)}</td>
+                      <td
+                        className={
+                          bucket === 'overdue' ? 'countdown is-late' : 'countdown'
+                        }
+                      >
+                        {left === null ? '—' : formatRemaining(left)}
+                      </td>
                     </tr>
                   )
                 })}
@@ -322,8 +335,11 @@ export function DashboardPage() {
                     <td>
                       {order.dueDate ? (
                         <div className="inline-list">
-                          <span>{formatDateForHumans(order.dueDate)}</span>
-                          <DeliveryPill bucket={deliveryBucket(order, today)} />
+                          <span>
+                            {formatDateForHumans(order.dueDate)}
+                            {order.dueTime && ` at ${order.dueTime}`}
+                          </span>
+                          <DeliveryPill bucket={deliveryBucket(order, now)} />
                         </div>
                       ) : (
                         <span className="muted">—</span>
@@ -351,11 +367,4 @@ export function DashboardPage() {
       </section>
     </div>
   )
-}
-
-/** '3 days late', 'due today', 'in 5 days'. */
-function describeDays(days: number): string {
-  if (days === 0) return 'due today'
-  if (days < 0) return `${Math.abs(days)} day${days === -1 ? '' : 's'} late`
-  return `in ${days} day${days === 1 ? '' : 's'}`
 }

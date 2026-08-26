@@ -7,13 +7,17 @@ import {
   deliveryBucket,
   derivePaymentStatus,
   dueBucket,
+  formatDuration,
+  formatRemaining,
   freelancerPayoutCents,
   invoiceTotals,
   isRetainerClearToContinue,
   lineItemsTotalCents,
   lineItemTotalCents,
+  orderDueAt,
   orderTotals,
   recordedTotalCents,
+  remainingMs,
   todayIso,
 } from './calc'
 import { parseAmountToCents, percentOfCents, splitCents } from './money'
@@ -27,6 +31,12 @@ import {
 } from '../types/domain'
 
 const OWNER = 'owner-1'
+
+/** An instant at midday on the given ISO date, in local time. */
+function at(isoDate: string, hours = 12, minutes = 0): Date {
+  const [y, m, d] = isoDate.split('-').map(Number)
+  return new Date(y, m - 1, d, hours, minutes)
+}
 
 function order(over: Partial<Order> & { id: string }): Order {
   return {
@@ -360,7 +370,7 @@ describe('dashboard summary', () => {
     txn({ id: 't1', invoiceId: 'i1', orderId: 'p1', amountCents: 20_000, status: 'pending' }),
   ]
 
-  const summary = dashboardSummary(orders, invoices, transactions, '2026-03-08')
+  const summary = dashboardSummary(orders, invoices, transactions, at('2026-03-08'))
 
   it('ignores orders that are no longer active', () => {
     expect(summary.activeOrders).toBe(2)
@@ -383,7 +393,7 @@ describe('dashboard summary', () => {
     const overpaid = [
       txn({ id: 't1', invoiceId: 'i1', orderId: 'p1', amountCents: 60_000 }),
     ]
-    const withCredit = dashboardSummary(orders, invoices, overpaid, '2026-03-08')
+    const withCredit = dashboardSummary(orders, invoices, overpaid, at('2026-03-08'))
 
     // p1 is 200 in credit, p2 owes 150. Outstanding is 150, not zero.
     expect(withCredit.outstandingCents).toBe(15_000)
@@ -450,28 +460,28 @@ describe('order delivery dates', () => {
     order({ dueDate: '2026-09-10', ...over })
 
   it('is overdue once the promised date has passed', () => {
-    expect(deliveryBucket(withDue({ id: 'o1' }), '2026-09-11')).toBe('overdue')
+    expect(deliveryBucket(withDue({ id: 'o1' }), at('2026-09-11'))).toBe('overdue')
   })
 
   it('warns within the week, quiet before that', () => {
-    expect(deliveryBucket(withDue({ id: 'o1' }), '2026-09-04')).toBe('due_soon')
-    expect(deliveryBucket(withDue({ id: 'o1' }), '2026-09-02')).toBe('upcoming')
+    expect(deliveryBucket(withDue({ id: 'o1' }), at('2026-09-04'))).toBe('due_soon')
+    expect(deliveryBucket(withDue({ id: 'o1' }), at('2026-09-02'))).toBe('upcoming')
   })
 
   it('counts the due date itself as due, not overdue', () => {
-    expect(deliveryBucket(withDue({ id: 'o1' }), '2026-09-10')).toBe('due_soon')
+    expect(deliveryBucket(withDue({ id: 'o1' }), at('2026-09-10'))).toBe('due_soon')
   })
 
   it('stays quiet for an order with no promised date', () => {
-    expect(deliveryBucket(order({ id: 'o1' }), '2026-09-11')).toBe('none')
+    expect(deliveryBucket(order({ id: 'o1' }), at('2026-09-11'))).toBe('none')
   })
 
   it('stops chasing once the order is completed or cancelled', () => {
     expect(
-      deliveryBucket(withDue({ id: 'o1', status: 'completed' }), '2026-09-11'),
+      deliveryBucket(withDue({ id: 'o1', status: 'completed' }), at('2026-09-11')),
     ).toBe('none')
     expect(
-      deliveryBucket(withDue({ id: 'o1', status: 'cancelled' }), '2026-09-11'),
+      deliveryBucket(withDue({ id: 'o1', status: 'cancelled' }), at('2026-09-11')),
     ).toBe('none')
   })
 
@@ -482,7 +492,7 @@ describe('order delivery dates', () => {
     const paid = [txn({ id: 't1', orderId: 'o1', amountCents: 10_000 })]
 
     expect(orderTotals(o, [], paid).status).toBe('fully_paid')
-    expect(deliveryBucket(o, '2026-09-11')).toBe('overdue')
+    expect(deliveryBucket(o, at('2026-09-11'))).toBe('overdue')
   })
 })
 
@@ -495,7 +505,7 @@ describe('dashboard delivery counts', () => {
     order({ id: 'o5', dueDate: '2026-09-01', status: 'completed' }),
   ]
 
-  const summary = dashboardSummary(orders, [], [], '2026-09-08')
+  const summary = dashboardSummary(orders, [], [], at('2026-09-08'))
 
   it('counts overdue and imminent deliveries, ignoring the rest', () => {
     expect(summary.overdueDeliveries).toBe(1)
@@ -512,7 +522,7 @@ describe('order lifecycle', () => {
     const open = OPEN_ORDER_STATUSES.map((status, i) =>
       order({ id: `o${i}`, status, agreedAmountCents: 10_000 }),
     )
-    const summary = dashboardSummary(open, [], [], '2026-09-08')
+    const summary = dashboardSummary(open, [], [], at('2026-09-08'))
 
     expect(summary.activeOrders).toBe(5)
     expect(summary.outstandingCents).toBe(50_000)
@@ -524,7 +534,7 @@ describe('order lifecycle', () => {
       order({ id: 'o2', status: 'completed', agreedAmountCents: 99_000 }),
       order({ id: 'o3', status: 'cancelled', agreedAmountCents: 99_000 }),
     ]
-    const summary = dashboardSummary(orders, [], [], '2026-09-08')
+    const summary = dashboardSummary(orders, [], [], at('2026-09-08'))
 
     expect(summary.activeOrders).toBe(1)
     expect(summary.outstandingCents).toBe(10_000)
@@ -532,7 +542,7 @@ describe('order lifecycle', () => {
 
   it('chases a delivery date only while the work is still outstanding', () => {
     const late = (status: OrderStatus) =>
-      deliveryBucket(order({ id: 'o1', status, dueDate: '2026-09-01' }), '2026-09-08')
+      deliveryBucket(order({ id: 'o1', status, dueDate: '2026-09-01' }), at('2026-09-08'))
 
     expect(late('initial')).toBe('overdue')
     expect(late('confirmed')).toBe('overdue')
@@ -545,7 +555,7 @@ describe('order lifecycle', () => {
 
   it('still counts a delivered but unpaid order as money outstanding', () => {
     const o = order({ id: 'o1', status: 'payment_pending', agreedAmountCents: 20_000 })
-    const summary = dashboardSummary([o], [], [], '2026-09-08')
+    const summary = dashboardSummary([o], [], [], at('2026-09-08'))
 
     expect(summary.outstandingCents).toBe(20_000)
     expect(summary.overdueDeliveries).toBe(0)
@@ -565,5 +575,76 @@ describe('normaliseOrderStatus', () => {
   it('falls back to the first stage for anything unrecognised', () => {
     expect(normaliseOrderStatus('nonsense')).toBe('initial')
     expect(normaliseOrderStatus('')).toBe('initial')
+  })
+})
+
+describe('order deadline instant', () => {
+  it('defaults to the very end of the day when no time is set', () => {
+    const due = orderDueAt({ dueDate: '2026-09-10' })
+    expect(due?.getHours()).toBe(23)
+    expect(due?.getMinutes()).toBe(59)
+  })
+
+  it('uses the time of day when one is set', () => {
+    const due = orderDueAt({ dueDate: '2026-09-10', dueTime: '14:30' })
+    expect(due?.getHours()).toBe(14)
+    expect(due?.getMinutes()).toBe(30)
+  })
+
+  it('is null without a date', () => {
+    expect(orderDueAt({})).toBeNull()
+  })
+
+  it('is not late at 9am on a date-only deadline', () => {
+    // The bug this guards: treating a bare date as midnight would mark every
+    // such order overdue the moment the day began.
+    const o = order({ id: 'o1', dueDate: '2026-09-10' })
+    expect(deliveryBucket(o, at('2026-09-10', 9))).toBe('due_soon')
+    expect(deliveryBucket(o, at('2026-09-11', 0, 1))).toBe('overdue')
+  })
+
+  it('goes late once the set time passes, same day', () => {
+    const o = order({ id: 'o1', dueDate: '2026-09-10', dueTime: '14:30' })
+    expect(deliveryBucket(o, at('2026-09-10', 14, 29))).toBe('due_soon')
+    expect(deliveryBucket(o, at('2026-09-10', 14, 31))).toBe('overdue')
+  })
+})
+
+describe('countdown formatting', () => {
+  const hour = 60 * 60 * 1000
+  const day = 24 * hour
+
+  it('shows days and hours when more than a day remains', () => {
+    expect(formatDuration(3 * day + 5 * hour)).toBe('3d 5h')
+  })
+
+  it('shows hours and minutes under a day', () => {
+    expect(formatDuration(5 * hour + 12 * 60_000)).toBe('5h 12m')
+  })
+
+  it('shows seconds only under an hour, where they matter', () => {
+    expect(formatDuration(42 * 60_000 + 18_000)).toBe('42m 18s')
+    expect(formatDuration(9_000)).toBe('9s')
+  })
+
+  it('never shows more than two units', () => {
+    expect(formatDuration(day + hour + 60_000 + 1_000)).toBe('1d 1h')
+  })
+
+  it('marks a passed deadline as late rather than negative', () => {
+    expect(formatRemaining(-(2 * day + 4 * hour))).toBe('2d 4h late')
+    expect(formatRemaining(-30_000)).toBe('30s late')
+  })
+
+  it('treats the exact moment of the deadline as late, not remaining', () => {
+    expect(formatRemaining(0)).toBe('0s late')
+  })
+
+  it('counts down against a real deadline', () => {
+    const o = order({ id: 'o1', dueDate: '2026-09-10', dueTime: '17:00' })
+    const left = remainingMs(o, at('2026-09-10', 15, 30))
+
+    expect(left).toBe(90 * 60_000)
+    expect(formatRemaining(left!)).toBe('1h 30m')
   })
 })

@@ -148,6 +148,14 @@ export interface Order extends OwnedRecord {
    * this field existed have none.
    */
   dueDate?: string
+  /**
+   * Time of day the work is due, as 'HH:mm' in the freelancer's own timezone.
+   *
+   * Optional, and when absent the deadline is the *end* of `dueDate` — "due on
+   * the 20th" means any time on the 20th is fine. That default is what keeps
+   * orders created before this field behaving exactly as they did.
+   */
+  dueTime?: string
   notes?: string
 }
 

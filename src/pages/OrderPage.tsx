@@ -5,17 +5,19 @@ import { useOwnerId } from '../auth/AuthProvider'
 import { useWorkspace } from '../data/WorkspaceProvider'
 import * as repo from '../data/repository'
 import {
-  daysBetween,
   deliveryBucket,
   dueBucket,
+  formatRemaining,
   invoiceTotals,
   isRetainerClearToContinue,
   lineItemsTotalCents,
   lineItemTotalCents,
   periodKeyOf,
   orderTotals,
+  remainingMs,
   todayIso,
 } from '../lib/calc'
+import { useNow } from '../lib/useNow'
 import { centsToInputValue, formatCents, parseAmountToCents } from '../lib/money'
 import { addDays, nextRetainerInvoice } from '../lib/invoicing'
 import {
@@ -60,7 +62,8 @@ export function OrderPage() {
   const [busy, setBusy] = useState(false)
   const [editingDueDate, setEditingDueDate] = useState(false)
 
-  const today = todayIso()
+  const now = useNow()
+  const today = todayIso(now)
   const order = orders.find((p) => p.id === orderId)
   const client = clients.find((c) => c.id === order?.clientId)
 
@@ -104,6 +107,9 @@ export function OrderPage() {
         ? 'This order is fully paid — you can mark it completed.'
         : null
 
+  // Only worth counting down while the work is still outstanding.
+  const countdown = isAwaitingDelivery(order.status) ? remainingMs(order, now) : null
+
   const isRetainer = order.billingType === 'monthly_retainer'
   const retainerBlocked =
     isRetainer &&
@@ -132,12 +138,17 @@ export function OrderPage() {
       ? ORDER_STAGES[currentStage + 1]
       : null
 
-  async function saveDueDate(value: string) {
+  async function saveDeadline(dueDate: string, dueTime: string) {
     if (!order) return
 
     setBusy(true)
     try {
-      await repo.orders.update(order.id, { dueDate: value })
+      await repo.orders.update(order.id, {
+        dueDate,
+        // An empty time means "any time that day"; store nothing rather than
+        // an empty string so orderDueAt falls back to end of day.
+        dueTime: dueTime || undefined,
+      })
       await refresh()
       setEditingDueDate(false)
     } finally {
@@ -183,13 +194,12 @@ export function OrderPage() {
               Delivery due:
             </span>
             {editingDueDate ? (
-              <input
-                type="date"
-                autoFocus
-                defaultValue={order.dueDate ?? todayIso()}
-                disabled={busy}
-                style={{ width: 'auto' }}
-                onBlur={(e) => void saveDueDate(e.target.value)}
+              <DeadlineEditor
+                dueDate={order.dueDate ?? today}
+                dueTime={order.dueTime ?? ''}
+                busy={busy}
+                onCancel={() => setEditingDueDate(false)}
+                onSave={saveDeadline}
               />
             ) : (
               <>
@@ -198,18 +208,14 @@ export function OrderPage() {
                   onClick={() => setEditingDueDate(true)}
                 >
                   {order.dueDate
-                    ? formatDateForHumans(order.dueDate)
+                    ? `${formatDateForHumans(order.dueDate)}${order.dueTime ? ` at ${order.dueTime}` : ''}`
                     : 'Set a date'}
                 </button>
-                <DeliveryPill bucket={deliveryBucket(order, today)} />
-                {order.dueDate && isAwaitingDelivery(order.status) && (
-                  <span className="muted" style={{ fontSize: '0.8rem' }}>
-                    {describeDelivery(daysBetween(today, order.dueDate))}
-                  </span>
-                )}
+                <DeliveryPill bucket={deliveryBucket(order, now)} />
               </>
             )}
           </div>
+
         </div>
         <div className="actions">
           <div className="stages">
@@ -290,6 +296,18 @@ export function OrderPage() {
           value={formatCents(totals.payoutCents)}
           hint="on cleared money"
         />
+        {countdown !== null && (
+          <Stat
+            label={countdown <= 0 ? 'Overdue by' : 'Time remaining'}
+            value={formatRemaining(countdown).replace(' late', '')}
+            alert={countdown <= 0}
+            hint={
+              order.dueTime
+                ? `due ${formatDateForHumans(order.dueDate ?? '')} at ${order.dueTime}`
+                : `due end of ${formatDateForHumans(order.dueDate ?? '')}`
+            }
+          />
+        )}
       </div>
 
       <section className="card">
@@ -881,9 +899,53 @@ function toLineItem(row: LineRow): InvoiceLineItem | null {
   return { description: row.description.trim(), quantity, unitPriceCents }
 }
 
-/** Plain-language gap to a delivery date. */
-function describeDelivery(days: number): string {
-  if (days === 0) return 'due today'
-  if (days < 0) return `${Math.abs(days)} day${days === -1 ? '' : 's'} late`
-  return `in ${days} day${days === 1 ? '' : 's'}`
+/**
+ * Date plus optional time-of-day. Kept as one editor so both are saved
+ * together — saving them separately would briefly persist a time against the
+ * wrong date.
+ */
+function DeadlineEditor({
+  dueDate,
+  dueTime,
+  busy,
+  onSave,
+  onCancel,
+}: {
+  dueDate: string
+  dueTime: string
+  busy: boolean
+  onSave: (dueDate: string, dueTime: string) => void
+  onCancel: () => void
+}) {
+  const [date, setDate] = useState(dueDate)
+  const [time, setTime] = useState(dueTime)
+
+  return (
+    <span className="inline-list">
+      <input
+        type="date"
+        value={date}
+        autoFocus
+        style={{ width: 'auto' }}
+        onChange={(e) => setDate(e.target.value)}
+      />
+      <input
+        type="time"
+        value={time}
+        style={{ width: 'auto' }}
+        aria-label="Time due"
+        onChange={(e) => setTime(e.target.value)}
+      />
+      <button
+        className="btn--sm btn--primary"
+        disabled={busy || !date}
+        onClick={() => onSave(date, time)}
+      >
+        Save
+      </button>
+      <button className="btn--sm btn--ghost" onClick={onCancel}>
+        Cancel
+      </button>
+    </span>
+  )
 }

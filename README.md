@@ -92,6 +92,19 @@ The dashboard reflects that with two separate lists: **Deliveries due** (orders,
 a week's warning) and **Needs chasing** (invoices, three days' warning, matching
 the scenario document's reminder window).
 
+An order's deadline can carry a **time of day** (`dueTime`, `HH:mm` local). With
+no time, the deadline is the *end* of `dueDate` — "due on the 20th" is not late
+at 9am on the 20th, and treating a bare date as midnight would mark every such
+order overdue the moment the day began.
+
+Both lists show a **live countdown** — `3d 5h`, `5h 12m`, `42m 18s`, or
+`1h 35m late`. Seconds appear only under an hour, where they start being useful
+rather than noise. One `useNow()` timer drives every countdown on a page, so a
+list of ten orders costs one interval and one re-render per tick.
+
+The clock enters the app only through `useNow()`; everything in `calc.ts` takes
+`now` as an argument, which is what keeps the deadline logic testable.
+
 One client can have any number of orders; each is billed and tracked on its own.
 
 ## Setup

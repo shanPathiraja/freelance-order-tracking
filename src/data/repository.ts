@@ -11,6 +11,7 @@ import {
   addDoc,
   collection,
   deleteDoc,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -42,6 +43,18 @@ export const COLLECTIONS = {
 /** Fields the caller supplies; id/ownerId/createdAt are filled in here. */
 type NewRecord<T> = Omit<T, 'id' | 'ownerId' | 'createdAt'>
 
+/**
+ * Firestore rejects `undefined` field values with an error rather than
+ * ignoring them, so clearing an optional field means deleting the key. Callers
+ * pass `undefined` to mean "no value" — for example an order due date with no
+ * time of day — and this is where that becomes a valid write.
+ */
+function withoutUndefined<T extends object>(data: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(data).filter(([, value]) => value !== undefined),
+  ) as Partial<T>
+}
+
 async function listOwned<T>(
   collectionName: string,
   ownerId: string,
@@ -59,7 +72,7 @@ async function createOwned<T>(
   data: NewRecord<T>,
 ): Promise<string> {
   const ref = await addDoc(collection(db, collectionName), {
-    ...data,
+    ...withoutUndefined(data),
     ownerId,
     createdAt: Date.now(),
   })
@@ -91,7 +104,14 @@ export const orders = {
   create: (ownerId: string, data: NewRecord<Order>) =>
     createOwned<Order>(COLLECTIONS.orders, ownerId, data),
   update: (id: string, data: Partial<NewRecord<Order>>) =>
-    updateDoc(doc(db, COLLECTIONS.orders, id), data),
+    // deleteField() rather than a dropped key, so clearing a due time actually
+    // removes it instead of silently leaving the old value in place.
+    updateDoc(
+      doc(db, COLLECTIONS.orders, id),
+      Object.fromEntries(
+        Object.entries(data).map(([k, v]) => [k, v === undefined ? deleteField() : v]),
+      ),
+    ),
 }
 
 export const invoices = {
