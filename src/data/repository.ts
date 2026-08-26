@@ -29,6 +29,7 @@ import type {
   Order,
   Transaction,
 } from '../types/domain'
+import { normaliseOrderStatus } from '../types/domain'
 
 export const COLLECTIONS = {
   clients: 'clients',
@@ -75,7 +76,18 @@ export const clients = {
 }
 
 export const orders = {
-  list: (ownerId: string) => listOwned<Order>(COLLECTIONS.orders, ownerId),
+  /**
+   * Orders written before the lifecycle existed carry the old 'active' status.
+   * Map it forward on read so the UI never has to handle a value that is no
+   * longer in the union, and no database migration is needed.
+   */
+  list: async (ownerId: string) => {
+    const rows = await listOwned<Order>(COLLECTIONS.orders, ownerId)
+    return rows.map((row) => ({
+      ...row,
+      status: normaliseOrderStatus(row.status),
+    }))
+  },
   create: (ownerId: string, data: NewRecord<Order>) =>
     createOwned<Order>(COLLECTIONS.orders, ownerId, data),
   update: (id: string, data: Partial<NewRecord<Order>>) =>

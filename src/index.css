@@ -924,3 +924,56 @@ button:disabled {
     border-top: 1px solid var(--border);
   }
 }
+
+/* ---------- order lifecycle pills ---------- */
+
+.pill--initial {
+  color: var(--neutral);
+  background: var(--neutral-bg);
+}
+
+.pill--confirmed,
+.pill--started {
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.pill--delivered {
+  color: var(--partial);
+  background: var(--partial-bg);
+}
+
+.pill--payment_pending {
+  color: var(--unpaid);
+  background: var(--unpaid-bg);
+}
+
+.pill--completed {
+  color: var(--paid);
+  background: var(--paid-bg);
+}
+
+.pill--cancelled {
+  color: var(--text-muted);
+  background: var(--surface-sunken);
+  text-decoration: line-through;
+}
+
+/* ---------- lifecycle control on the order page ---------- */
+
+.stages {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.stages select {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+}

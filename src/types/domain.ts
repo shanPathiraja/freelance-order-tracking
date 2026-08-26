@@ -31,7 +31,86 @@ export type TransactionStatus = 'pending' | 'cleared'
 
 export type PaymentMethod = 'bank_transfer' | 'cash' | 'card' | 'other'
 
-export type OrderStatus = 'active' | 'completed' | 'cancelled'
+/**
+ * Where an order sits in its lifecycle. The freelancer advances this by hand;
+ * nothing moves it automatically, because only they know when a client has
+ * actually confirmed or when the work has gone out.
+ *
+ * `cancelled` is not part of the normal run of stages but is kept as an escape
+ * hatch — an order can die at any point, and without it the only way to clear
+ * a dead order off the dashboard would be to pretend it completed.
+ */
+export type OrderStatus =
+  /** Logged, but the client has not committed yet — a quote or an enquiry. */
+  | 'initial'
+  /** Client has agreed to it. Work has not begun. */
+  | 'confirmed'
+  /** Work in progress. */
+  | 'started'
+  /** Work handed over. Nothing more to make. */
+  | 'delivered'
+  /** Delivered and waiting on money. */
+  | 'payment_pending'
+  /** Done and settled. */
+  | 'completed'
+  /** Abandoned. Kept for the record, excluded from every total. */
+  | 'cancelled'
+
+/** The lifecycle in order, for stepping an order forward one stage at a time. */
+export const ORDER_STAGES: OrderStatus[] = [
+  'initial',
+  'confirmed',
+  'started',
+  'delivered',
+  'payment_pending',
+  'completed',
+]
+
+export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
+  initial: 'Initial',
+  confirmed: 'Confirmed',
+  started: 'Started',
+  delivered: 'Delivered',
+  payment_pending: 'Payment pending',
+  completed: 'Completed',
+  cancelled: 'Cancelled',
+}
+
+/**
+ * Statuses that still count toward outstanding money and the active ledger.
+ * A completed or cancelled order is history.
+ */
+export const OPEN_ORDER_STATUSES: OrderStatus[] = [
+  'initial',
+  'confirmed',
+  'started',
+  'delivered',
+  'payment_pending',
+]
+
+export function isOpenOrder(status: OrderStatus): boolean {
+  return OPEN_ORDER_STATUSES.includes(status)
+}
+
+/**
+ * Stages where the work itself is still outstanding, so a delivery deadline
+ * is worth chasing. Once it is delivered the date has been met.
+ */
+export function isAwaitingDelivery(status: OrderStatus): boolean {
+  return status === 'initial' || status === 'confirmed' || status === 'started'
+}
+
+/**
+ * Orders created before the lifecycle existed carry the old 'active' value.
+ * Map it forward on read rather than migrating the database — 'confirmed' is
+ * the closest match to what 'active' meant.
+ */
+export function normaliseOrderStatus(status: string): OrderStatus {
+  if (status === 'active') return 'confirmed'
+  return (ORDER_STATUS_LABELS as Record<string, string>)[status]
+    ? (status as OrderStatus)
+    : 'initial'
+}
 
 /** Fields every record carries. `ownerId` is what the Firestore rules match on. */
 interface OwnedRecord {

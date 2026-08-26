@@ -29,6 +29,7 @@ import {
   DeliveryPill,
   DuePill,
   EmptyState,
+  OrderStatusPill,
   Field,
   Modal,
   Money,
@@ -38,9 +39,13 @@ import {
 } from '../components/ui'
 import {
   BILLING_TYPE_LABELS,
+  isAwaitingDelivery,
+  ORDER_STAGES,
+  ORDER_STATUS_LABELS,
   PAYMENT_METHOD_LABELS,
   type Invoice,
   type InvoiceLineItem,
+  type OrderStatus,
   type PaymentMethod,
 } from '../types/domain'
 
@@ -86,6 +91,19 @@ export function OrderPage() {
     )
   }
 
+  /**
+   * The lifecycle is driven by hand while payment status is derived from
+   * transactions, so the two can disagree. Say so rather than letting a
+   * settled order sit at "payment pending" forever, or a "completed" order
+   * quietly hide money still owed.
+   */
+  const statusHint =
+    order.status === 'completed' && totals.balanceCents > 0
+      ? `This order is marked completed but ${formatCents(totals.balanceCents)} is still outstanding.`
+      : order.status === 'payment_pending' && totals.status === 'fully_paid'
+        ? 'This order is fully paid — you can mark it completed.'
+        : null
+
   const isRetainer = order.billingType === 'monthly_retainer'
   const retainerBlocked =
     isRetainer &&
@@ -106,6 +124,14 @@ export function OrderPage() {
     }
   }
 
+  // The next stage to offer as a one-click action. Nothing to offer once the
+  // order is completed or cancelled.
+  const currentStage = order ? ORDER_STAGES.indexOf(order.status) : -1
+  const nextStage =
+    currentStage >= 0 && currentStage < ORDER_STAGES.length - 1
+      ? ORDER_STAGES[currentStage + 1]
+      : null
+
   async function saveDueDate(value: string) {
     if (!order) return
 
@@ -119,14 +145,12 @@ export function OrderPage() {
     }
   }
 
-  async function toggleOrderStatus() {
+  async function setStatus(status: OrderStatus) {
     if (!order) return
 
     setBusy(true)
     try {
-      await repo.orders.update(order.id, {
-        status: order.status === 'active' ? 'completed' : 'active',
-      })
+      await repo.orders.update(order.id, { status })
       await refresh()
     } finally {
       setBusy(false)
@@ -137,7 +161,10 @@ export function OrderPage() {
     <div className="page">
       <div className="page__header">
         <div>
-          <h1>{order.title}</h1>
+          <div className="inline-list">
+            <h1>{order.title}</h1>
+            <OrderStatusPill status={order.status} />
+          </div>
           <p>
             {client ? (
               <Link className="row-link" to="/clients">
@@ -175,7 +202,7 @@ export function OrderPage() {
                     : 'Set a date'}
                 </button>
                 <DeliveryPill bucket={deliveryBucket(order, today)} />
-                {order.dueDate && order.status === 'active' && (
+                {order.dueDate && isAwaitingDelivery(order.status) && (
                   <span className="muted" style={{ fontSize: '0.8rem' }}>
                     {describeDelivery(daysBetween(today, order.dueDate))}
                   </span>
@@ -185,9 +212,28 @@ export function OrderPage() {
           </div>
         </div>
         <div className="actions">
-          <button onClick={toggleOrderStatus} disabled={busy}>
-            {order.status === 'active' ? 'Mark completed' : 'Reopen'}
-          </button>
+          <div className="stages">
+            <select
+              aria-label="Order status"
+              value={order.status}
+              disabled={busy}
+              onChange={(e) => void setStatus(e.target.value as OrderStatus)}
+            >
+              {ORDER_STAGES.map((stage) => (
+                <option key={stage} value={stage}>
+                  {ORDER_STATUS_LABELS[stage]}
+                </option>
+              ))}
+              <option value="cancelled">
+                {ORDER_STATUS_LABELS.cancelled}
+              </option>
+            </select>
+            {nextStage && (
+              <button disabled={busy} onClick={() => void setStatus(nextStage)}>
+                Mark {ORDER_STATUS_LABELS[nextStage].toLowerCase()}
+              </button>
+            )}
+          </div>
           {isRetainer ? (
             <button className="btn--primary" onClick={generateNextMonth} disabled={busy}>
               Generate next month
@@ -199,6 +245,8 @@ export function OrderPage() {
           )}
         </div>
       </div>
+
+      {statusHint && <div className="banner banner--warn">{statusHint}</div>}
 
       {retainerBlocked && (
         <div className="banner banner--warn">

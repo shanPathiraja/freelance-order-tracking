@@ -2,7 +2,9 @@ import type { ReactNode } from 'react'
 
 import { formatCents } from '../lib/money'
 import {
+  ORDER_STATUS_LABELS,
   PAYMENT_STATUS_LABELS,
+  type OrderStatus,
   type PaymentStatus,
 } from '../types/domain'
 import type { DeliveryBucket, DueBucket } from '../lib/calc'
@@ -38,6 +40,15 @@ export function DeliveryPill({ bucket }: { bucket: DeliveryBucket }) {
   if (!label) return null
 
   return <span className={`pill pill--${bucket}`}>{label}</span>
+}
+
+/** Where an order sits in its lifecycle — not its payment status. */
+export function OrderStatusPill({ status }: { status: OrderStatus }) {
+  return (
+    <span className={`pill pill--${status}`}>
+      {ORDER_STATUS_LABELS[status]}
+    </span>
+  )
 }
 
 export function Stat({

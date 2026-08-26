@@ -27,7 +27,7 @@ const order: Order = {
   billingType: 'fixed_split',
   agreedAmountCents: 40_000,
   commissionRate: 0,
-  status: 'active',
+  status: 'confirmed',
 }
 
 const invoice: Invoice = {

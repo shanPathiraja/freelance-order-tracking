@@ -58,7 +58,7 @@ export function NewOrderModal({
         billingType,
         agreedAmountCents,
         commissionRate: commissionPercent / 100,
-        status: 'active',
+        status: 'initial',
         // Delivery deadline, distinct from the invoice payment dates that
         // initialInvoices raises below.
         ...(dueDate ? { dueDate } : {}),

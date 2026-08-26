@@ -17,7 +17,14 @@ import {
   todayIso,
 } from './calc'
 import { parseAmountToCents, percentOfCents, splitCents } from './money'
-import type { Invoice, Order, Transaction } from '../types/domain'
+import {
+  normaliseOrderStatus,
+  OPEN_ORDER_STATUSES,
+  type Invoice,
+  type Order,
+  type OrderStatus,
+  type Transaction,
+} from '../types/domain'
 
 const OWNER = 'owner-1'
 
@@ -30,7 +37,7 @@ function order(over: Partial<Order> & { id: string }): Order {
     billingType: 'fixed_split',
     agreedAmountCents: 0,
     commissionRate: 0,
-    status: 'active',
+    status: 'confirmed',
     ...over,
   }
 }
@@ -497,5 +504,66 @@ describe('dashboard delivery counts', () => {
 
   it('does not count a completed order as an overdue delivery', () => {
     expect(summary.activeOrders).toBe(4)
+  })
+})
+
+describe('order lifecycle', () => {
+  it('counts every open stage toward the active ledger', () => {
+    const open = OPEN_ORDER_STATUSES.map((status, i) =>
+      order({ id: `o${i}`, status, agreedAmountCents: 10_000 }),
+    )
+    const summary = dashboardSummary(open, [], [], '2026-09-08')
+
+    expect(summary.activeOrders).toBe(5)
+    expect(summary.outstandingCents).toBe(50_000)
+  })
+
+  it('drops completed and cancelled orders out of the totals', () => {
+    const orders = [
+      order({ id: 'o1', status: 'started', agreedAmountCents: 10_000 }),
+      order({ id: 'o2', status: 'completed', agreedAmountCents: 99_000 }),
+      order({ id: 'o3', status: 'cancelled', agreedAmountCents: 99_000 }),
+    ]
+    const summary = dashboardSummary(orders, [], [], '2026-09-08')
+
+    expect(summary.activeOrders).toBe(1)
+    expect(summary.outstandingCents).toBe(10_000)
+  })
+
+  it('chases a delivery date only while the work is still outstanding', () => {
+    const late = (status: OrderStatus) =>
+      deliveryBucket(order({ id: 'o1', status, dueDate: '2026-09-01' }), '2026-09-08')
+
+    expect(late('initial')).toBe('overdue')
+    expect(late('confirmed')).toBe('overdue')
+    expect(late('started')).toBe('overdue')
+    // Handed over — the deadline was met, whatever the money is doing.
+    expect(late('delivered')).toBe('none')
+    expect(late('payment_pending')).toBe('none')
+    expect(late('completed')).toBe('none')
+  })
+
+  it('still counts a delivered but unpaid order as money outstanding', () => {
+    const o = order({ id: 'o1', status: 'payment_pending', agreedAmountCents: 20_000 })
+    const summary = dashboardSummary([o], [], [], '2026-09-08')
+
+    expect(summary.outstandingCents).toBe(20_000)
+    expect(summary.overdueDeliveries).toBe(0)
+  })
+})
+
+describe('normaliseOrderStatus', () => {
+  it('maps the pre-lifecycle "active" value forward', () => {
+    expect(normaliseOrderStatus('active')).toBe('confirmed')
+  })
+
+  it('passes through a value that is already valid', () => {
+    expect(normaliseOrderStatus('delivered')).toBe('delivered')
+    expect(normaliseOrderStatus('cancelled')).toBe('cancelled')
+  })
+
+  it('falls back to the first stage for anything unrecognised', () => {
+    expect(normaliseOrderStatus('nonsense')).toBe('initial')
+    expect(normaliseOrderStatus('')).toBe('initial')
   })
 })

@@ -53,6 +53,34 @@ Currency is **LKR**, rendered `Rs 12,278.00`. That symbol is deliberately not
 `Intl` currency formatting, which renders LKR as the ISO code
 ("LKR 12,278.00"); see `CURRENCY_SYMBOL` in `src/lib/money.ts`.
 
+## Order lifecycle
+
+An order moves through six stages, advanced by hand — nothing changes it
+automatically, because only you know when a client has actually confirmed or
+when work has gone out:
+
+`initial` → `confirmed` → `started` → `delivered` → `payment_pending` → `completed`
+
+`cancelled` sits outside that run as an escape hatch. Without it the only way
+to clear a dead order off the dashboard would be to pretend it completed.
+
+Two things follow from the stage:
+
+- **Open vs closed.** Everything up to and including `payment_pending` counts
+  toward outstanding money and the active ledger. `completed` and `cancelled`
+  are history.
+- **Delivery chasing stops at `delivered`.** A due date is only worth chasing
+  while the work is still outstanding.
+
+The stage is manual while payment status is *derived* from transactions, so the
+two can disagree. The order page says so rather than letting it rot — a
+`completed` order with money still owed, or a `payment_pending` order that is
+fully paid, both get a banner.
+
+Orders written before this existed carry the old `active` value;
+`normaliseOrderStatus` maps it to `confirmed` on read, so no database migration
+was needed.
+
 ## Delivery dates vs payment dates
 
 An `Order` carries an optional `dueDate` — when the **work** is promised. Each

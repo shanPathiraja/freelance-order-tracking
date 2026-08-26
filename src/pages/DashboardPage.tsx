@@ -24,11 +24,12 @@ import {
   DuePill,
   EmptyState,
   Money,
+  OrderStatusPill,
   Stat,
   StatusPill,
   WhatsAppButton,
 } from '../components/ui'
-import { BILLING_TYPE_LABELS } from '../types/domain'
+import { BILLING_TYPE_LABELS, isOpenOrder } from '../types/domain'
 
 export function DashboardPage() {
   const { clients, orders, invoices, transactions, loading, error } =
@@ -47,7 +48,7 @@ export function DashboardPage() {
    */
   const needsChasing = useMemo(() => {
     const activeIds = new Set(
-      orders.filter((p) => p.status === 'active').map((p) => p.id),
+      orders.filter((o) => isOpenOrder(o.status)).map((o) => o.id),
     )
 
     return invoices
@@ -88,7 +89,7 @@ export function DashboardPage() {
   const ledger = useMemo(
     () =>
       orders
-        .filter((p) => p.status === 'active')
+        .filter((o) => isOpenOrder(o.status))
         .map((order) => ({
           order,
           client: clients.find((c) => c.id === order.clientId),
@@ -314,6 +315,9 @@ export function DashboardPage() {
                       <Link className="row-link" to={`/orders/${order.id}`}>
                         {order.title}
                       </Link>
+                      <div style={{ marginTop: '0.25rem' }}>
+                        <OrderStatusPill status={order.status} />
+                      </div>
                     </td>
                     <td>
                       {order.dueDate ? (

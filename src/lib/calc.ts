@@ -19,6 +19,7 @@ import type {
   Order,
   Transaction,
 } from '../types/domain'
+import { isAwaitingDelivery, isOpenOrder } from '../types/domain'
 import { percentOfCents } from './money'
 
 /** What one line is worth: quantity x unit price, rounded to whole cents. */
@@ -217,7 +218,7 @@ export function deliveryBucket(
   // more notice than a bank transfer does.
   soonWindowDays = 7,
 ): DeliveryBucket {
-  if (!order.dueDate || order.status !== 'active') return 'none'
+  if (!order.dueDate || !isAwaitingDelivery(order.status)) return 'none'
   if (order.dueDate < today) return 'overdue'
 
   return daysBetween(today, order.dueDate) <= soonWindowDays
@@ -270,7 +271,7 @@ export function dashboardSummary(
   transactions: Transaction[],
   today: string,
 ): DashboardSummary {
-  const active = orders.filter((p) => p.status === 'active')
+  const active = orders.filter((o) => isOpenOrder(o.status))
   const totals = active.map((p) => orderTotals(p, invoices, transactions))
 
   const activeOrderIds = new Set(active.map((p) => p.id))

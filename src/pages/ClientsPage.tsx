@@ -10,7 +10,14 @@ import {
   isUsableWhatsAppNumber,
   normalisePhone,
 } from '../lib/whatsapp'
-import { EmptyState, Field, Modal, Money, StatusPill } from '../components/ui'
+import {
+  EmptyState,
+  Field,
+  Modal,
+  Money,
+  OrderStatusPill,
+  StatusPill,
+} from '../components/ui'
 import { NewOrderModal } from './NewOrderModal'
 import { BILLING_TYPE_LABELS, type Client } from '../types/domain'
 
@@ -120,9 +127,9 @@ export function ClientsPage() {
                             <Link className="row-link" to={`/orders/${order.id}`}>
                               {order.title}
                             </Link>
-                            {order.status !== 'active' && (
-                              <span className="muted"> ({order.status})</span>
-                            )}
+                            <div style={{ marginTop: '0.2rem' }}>
+                              <OrderStatusPill status={order.status} />
+                            </div>
                           </td>
                           <td className="muted">
                             {BILLING_TYPE_LABELS[order.billingType]}
