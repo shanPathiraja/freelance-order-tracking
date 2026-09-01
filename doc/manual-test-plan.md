@@ -89,6 +89,19 @@ Create one order of each type and check the invoices it raises:
       dialog.*
 - [ ] An invoice with no line items still prints, using its label as one row.
 
+## 8b. Statements and payment requests
+
+- [ ] With a client that has **two** orders, one part-paid, press **Statement**
+      on their client card.
+- [ ] The sheet lists every invoice across both orders, a Total invoiced / Paid
+      / Balance due block, and a **Payments received** table.
+- [ ] **Send PDF** on a phone opens the share sheet — pick WhatsApp and the PDF
+      attaches. On a desktop it downloads instead, with a note explaining why.
+- [ ] Open the PDF: the figures match the sheet, and you can select the text.
+- [ ] **Send as text** opens WhatsApp with the summary written out, leading
+      with what has been paid.
+- [ ] A client with nothing outstanding shows no Statement button.
+
 ## 9. WhatsApp
 
 - [ ] Press **Request** on an unpaid invoice. WhatsApp opens with the message

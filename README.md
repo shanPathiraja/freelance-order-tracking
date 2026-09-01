@@ -216,6 +216,24 @@ A client with several orders should get one ask, not one per invoice. The
 outstanding invoice across every order, every payment received, and a single
 balance due. **Request payment** opens WhatsApp with the same summary.
 
+Three ways to send it, because WhatsApp constrains the options:
+
+| | |
+| --- | --- |
+| **Send PDF** | Builds a real PDF and hands it to the OS share sheet, so WhatsApp takes it as an attachment. On a desktop browser, which cannot share files, it downloads instead and you attach it yourself. |
+| **Send as text** | A `wa.me` link with the summary written out. Works everywhere, no attachment. |
+| **Print** | The browser's print dialog, for a paper copy or a PDF on file. |
+
+**A `wa.me` link cannot carry a file** — WhatsApp's URL scheme is text only. The
+Web Share API is the only route to an attached document without a paid Business
+API, which is why "Send PDF" behaves differently from the other two.
+
+The PDF is built programmatically rather than by screenshotting the page: the
+text stays selectable, it renders crisply at any zoom, and the file is ~16KB
+instead of the megabytes a rasterised page would cost over WhatsApp. jsPDF is
+~300KB, so `src/lib/statementPdf.ts` is only ever reached through a dynamic
+import — nobody who never sends a statement pays for it.
+
 What a statement includes:
 
 - Orders that are open show all their invoices, paid ones included, so the

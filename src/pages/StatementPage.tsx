@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
 import { useWorkspace } from '../data/WorkspaceProvider'
@@ -40,6 +40,49 @@ export function StatementPage() {
   const titleOf = (orderId: string) =>
     orders.find((o) => o.id === orderId)?.title ?? '—'
 
+  const [pdfState, setPdfState] = useState<'idle' | 'working' | 'downloaded' | 'error'>('idle')
+
+  /**
+   * Build the PDF and offer it to the OS share sheet, so WhatsApp can take it
+   * as an attachment. A wa.me link cannot carry a file, so this is the only
+   * route to an attached document without a paid Business API.
+   *
+   * Desktop browsers mostly cannot share files; there we save it instead and
+   * the freelancer attaches it by hand.
+   */
+  async function sendPdf() {
+    if (!client || !statement) return
+
+    setPdfState('working')
+    try {
+      // Loaded on demand: jsPDF is ~300KB and most sessions never need it.
+      const { buildStatementPdf, shareFile, downloadFile } = await import(
+        '../lib/statementPdf'
+      )
+
+      const file = await buildStatementPdf({
+        client,
+        statement,
+        orders,
+        invoices,
+        profile,
+        today,
+      })
+
+      const message = statementRequestMessage(client, statement, orders)
+      const shared = await shareFile(file, message)
+
+      if (shared) {
+        setPdfState('idle')
+      } else {
+        downloadFile(file)
+        setPdfState('downloaded')
+      }
+    } catch {
+      setPdfState('error')
+    }
+  }
+
   if (loading) {
     return <div className="page"><div className="empty">Loading…</div></div>
   }
@@ -67,17 +110,37 @@ export function StatementPage() {
         </span>
         {isUsableWhatsAppNumber(client.whatsapp) && (
           <WhatsAppButton
-            label="Send payment request"
+            label="Send as text"
             href={waLink(
               client.whatsapp,
               statementRequestMessage(client, statement, orders),
             )}
           />
         )}
-        <button className="btn--primary" onClick={() => window.print()}>
-          Print / Save as PDF
+        <button
+          className="btn--primary"
+          onClick={() => void sendPdf()}
+          disabled={pdfState === 'working'}
+        >
+          {pdfState === 'working' ? 'Preparing…' : 'Send PDF'}
         </button>
+        <button onClick={() => window.print()}>Print</button>
       </div>
+
+      {pdfState === 'downloaded' && (
+        <div className="print-toolbar print-toolbar--warn">
+          This browser can't hand files to WhatsApp, so the PDF was saved to
+          your downloads — attach it in WhatsApp yourself. Sending straight to
+          WhatsApp works from a phone.
+        </div>
+      )}
+
+      {pdfState === 'error' && (
+        <div className="print-toolbar print-toolbar--warn" role="alert">
+          Could not build the PDF. Use <strong>Print</strong> and save as PDF
+          instead.
+        </div>
+      )}
 
       <article className="sheet">
         <header className="sheet__banner">
