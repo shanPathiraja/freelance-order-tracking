@@ -4,11 +4,13 @@ import { Link } from 'react-router-dom'
 import { useOwnerId } from '../auth/AuthProvider'
 import { useWorkspace } from '../data/WorkspaceProvider'
 import * as repo from '../data/repository'
-import { orderTotals } from '../lib/calc'
+import { clientStatement, orderTotals, todayIso } from '../lib/calc'
 import { formatCents } from '../lib/money'
 import {
   isUsableWhatsAppNumber,
   normalisePhone,
+  statementRequestMessage,
+  waLink,
 } from '../lib/whatsapp'
 import {
   EmptyState,
@@ -17,6 +19,7 @@ import {
   Money,
   OrderStatusPill,
   StatusPill,
+  WhatsAppButton,
 } from '../components/ui'
 import { NewOrderModal } from './NewOrderModal'
 import { BILLING_TYPE_LABELS, type Client } from '../types/domain'
@@ -26,6 +29,8 @@ export function ClientsPage() {
   // null = closed, 'new' = create, otherwise the client being edited.
   const [clientForm, setClientForm] = useState<Client | 'new' | null>(null)
   const [orderForClient, setOrderForClient] = useState<string | null>(null)
+
+  const today = todayIso()
 
   const rows = useMemo(
     () =>
@@ -39,6 +44,13 @@ export function ClientsPage() {
           return {
             client,
             orders: theirOrders,
+            statement: clientStatement(
+              client.id,
+              orders,
+              invoices,
+              transactions,
+              today,
+            ),
             outstandingCents: totals.reduce(
               (sum, t) => sum + Math.max(t.balanceCents, 0),
               0,
@@ -46,7 +58,7 @@ export function ClientsPage() {
           }
         })
         .sort((a, b) => a.client.name.localeCompare(b.client.name)),
-    [clients, orders, invoices, transactions],
+    [clients, orders, invoices, transactions, today],
   )
 
   if (loading) return <div className="page"><div className="empty">Loading…</div></div>
@@ -72,7 +84,7 @@ export function ClientsPage() {
           </EmptyState>
         </div>
       ) : (
-        rows.map(({ client, orders: theirOrders, outstandingCents }) => (
+        rows.map(({ client, orders: theirOrders, statement, outstandingCents }) => (
           <section className="card" key={client.id}>
             <div className="card__title">
               <h2>{client.name}</h2>
@@ -81,6 +93,25 @@ export function ClientsPage() {
                   {formatCents(outstandingCents)} outstanding
                 </span>
               )}
+              {statement.lines.length > 0 && (
+                <Link
+                  className="btn btn--sm"
+                  to={`/clients/${client.id}/statement`}
+                >
+                  Statement
+                </Link>
+              )}
+              {statement.balanceDueCents > 0 &&
+                isUsableWhatsAppNumber(client.whatsapp) && (
+                  <WhatsAppButton
+                    small
+                    label="Request payment"
+                    href={waLink(
+                      client.whatsapp,
+                      statementRequestMessage(client, statement, orders),
+                    )}
+                  />
+                )}
               <button className="btn--sm" onClick={() => setClientForm(client)}>
                 Edit
               </button>

@@ -15,11 +15,12 @@ import { LoginPage } from './pages/LoginPage'
 import { InvoicePrintPage } from './pages/InvoicePrintPage'
 import { OrderPage } from './pages/OrderPage'
 import { SettingsPage } from './pages/SettingsPage'
+import { StatementPage } from './pages/StatementPage'
 import { SetupPage } from './pages/SetupPage'
 
 export default function App() {
-  // No order configured means nothing else can work — say so plainly rather
-  // than showing a login form that could never succeed.
+  // No Firebase project configured means nothing else can work — say so
+  // plainly rather than showing a login form that could never succeed.
   if (!isFirebaseConfigured) return <SetupPage />
 
   return (
@@ -90,6 +91,10 @@ function AppShell() {
           <Route
             path="/invoices/:invoiceId/print"
             element={<InvoicePrintPage />}
+          />
+          <Route
+            path="/clients/:clientId/statement"
+            element={<StatementPage />}
           />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<DashboardPage />} />

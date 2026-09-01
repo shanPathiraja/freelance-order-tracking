@@ -303,6 +303,94 @@ export function periodKeyOf(date: string): string {
   return date.slice(0, 7)
 }
 
+/** One billable line on a client statement. */
+export interface StatementLine {
+  invoice: Invoice
+  order: Order | undefined
+  paidCents: number
+  balanceCents: number
+  status: PaymentStatus
+  bucket: DueBucket
+}
+
+/**
+ * Everything a client owes and everything they have paid, across every order.
+ *
+ * A per-invoice request is the wrong shape once a client has several orders
+ * running — they would get three separate asks for one relationship. This
+ * gathers the lot into one account view.
+ */
+export interface ClientStatement {
+  clientId: string
+  lines: StatementLine[]
+  /** Payments against the invoices above, newest first. */
+  payments: Transaction[]
+  totalInvoicedCents: number
+  totalPaidCents: number
+  /** What is still owed. Negative would mean the client is in credit. */
+  balanceDueCents: number
+  overdueCount: number
+}
+
+export function clientStatement(
+  clientId: string,
+  orders: Order[],
+  invoices: Invoice[],
+  transactions: Transaction[],
+  today: string,
+): ClientStatement {
+  const byId = new Map(orders.map((o) => [o.id, o]))
+
+  const lines = invoices
+    .filter((invoice) => {
+      if (invoice.clientId !== clientId) return false
+
+      const order = byId.get(invoice.orderId)
+      // A cancelled order is not something to bill for, whatever it says.
+      if (!order || order.status === 'cancelled') return false
+
+      // Open orders show their whole history so the client can see what they
+      // have already paid; a closed order only appears if it still owes.
+      return (
+        isOpenOrder(order.status) ||
+        invoiceTotals(invoice, transactions).balanceCents > 0
+      )
+    })
+    .map((invoice) => {
+      const totals = invoiceTotals(invoice, transactions)
+      return {
+        invoice,
+        order: byId.get(invoice.orderId),
+        paidCents: totals.paidCents,
+        balanceCents: totals.balanceCents,
+        status: totals.status,
+        bucket: dueBucket(invoice, transactions, today),
+      }
+    })
+    .sort((a, b) => a.invoice.dueDate.localeCompare(b.invoice.dueDate))
+
+  const invoiceIds = new Set(lines.map((line) => line.invoice.id))
+  const payments = transactions
+    .filter((t) => invoiceIds.has(t.invoiceId))
+    .sort((a, b) => b.paidOn.localeCompare(a.paidOn))
+
+  const totalInvoicedCents = lines.reduce(
+    (sum, line) => sum + line.invoice.amountDueCents,
+    0,
+  )
+  const totalPaidCents = lines.reduce((sum, line) => sum + line.paidCents, 0)
+
+  return {
+    clientId,
+    lines,
+    payments,
+    totalInvoicedCents,
+    totalPaidCents,
+    balanceDueCents: totalInvoicedCents - totalPaidCents,
+    overdueCount: lines.filter((line) => line.bucket === 'overdue').length,
+  }
+}
+
 export interface DashboardSummary {
   /** Σ committed amounts across active orders — the book of work. */
   totalAgreedCents: number

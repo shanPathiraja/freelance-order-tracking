@@ -209,6 +209,21 @@ and Balance is the difference, all computed at render time.
 `print-color-adjust: exact`, without which Chrome drops the banner and the
 Total/Paid/Balance row colours.
 
+## Sending a payment request
+
+A client with several orders should get one ask, not one per invoice. The
+**Statement** button on a client card opens `/clients/:id/statement`: every
+outstanding invoice across every order, every payment received, and a single
+balance due. **Request payment** opens WhatsApp with the same summary.
+
+What a statement includes:
+
+- Orders that are open show all their invoices, paid ones included, so the
+  client can see credit for what they have already settled.
+- Closed orders appear only if they still owe something.
+- Cancelled orders never appear — billing for work you cancelled is the worst
+  error this could make.
+
 ## Tests
 
 The money logic is pure functions in [`src/lib/calc.ts`](src/lib/calc.ts) with

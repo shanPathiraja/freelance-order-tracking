@@ -10,6 +10,7 @@
 
 import { formatCents } from './money'
 import type { Client, Invoice, Order, Transaction } from '../types/domain'
+import type { ClientStatement } from './calc'
 
 /**
  * Default country code used to expand nationally-formatted numbers.
@@ -110,6 +111,47 @@ export function receiptMessage(
       ? `Remaining balance: *${formatCents(remainingCents)}*`
       : 'Your account is fully settled. 🎉',
   )
+
+  return lines.join('\n')
+}
+
+/**
+ * A payment request covering the client's whole account: what has been paid,
+ * what is still outstanding, and the balance.
+ *
+ * Sending one of these beats sending three separate invoice requests to a
+ * client with three orders running — they see the relationship, not fragments
+ * of it, and there is one number to pay.
+ */
+export function statementRequestMessage(
+  client: Client,
+  statement: ClientStatement,
+  orders: Order[],
+): string {
+  const outstanding = statement.lines.filter((line) => line.balanceCents > 0)
+  const titleOf = (orderId: string) =>
+    orders.find((o) => o.id === orderId)?.title ?? 'Work'
+
+  const lines = [`Hi ${client.name},`, '', 'Here is a summary of your account.']
+
+  if (statement.totalPaidCents > 0) {
+    lines.push('', `Received so far: *${formatCents(statement.totalPaidCents)}* — thank you.`)
+  }
+
+  if (outstanding.length > 0) {
+    lines.push('', 'Still outstanding:')
+    for (const line of outstanding) {
+      const overdue = line.bucket === 'overdue' ? ' (overdue)' : ''
+      lines.push(
+        `• ${titleOf(line.invoice.orderId)} — ${line.invoice.label}: ${formatCents(line.balanceCents)}${overdue}`,
+      )
+    }
+    lines.push('', `*Total due: ${formatCents(statement.balanceDueCents)}*`)
+  } else {
+    lines.push('', 'Everything is settled — nothing outstanding. 🎉')
+  }
+
+  lines.push('', 'Let me know if you would like a detailed invoice.')
 
   return lines.join('\n')
 }

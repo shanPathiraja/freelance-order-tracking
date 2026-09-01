@@ -990,3 +990,40 @@ button:disabled {
 .countdown.is-late {
   color: var(--unpaid);
 }
+
+/* ---------- statement extras ---------- */
+
+.sheet__section {
+  margin: 1.25rem 12mm 0.4rem;
+  font-size: 12pt;
+  font-weight: 700;
+  color: var(--banner, #015f42);
+}
+
+.sheet__note {
+  margin: 0.5rem 12mm 0;
+  font-size: 9.5pt;
+  color: #b91c1c;
+}
+
+/*
+ * The statement has six columns where the invoice has four, so it cannot use
+ * the invoice's fixed column widths — 26mm is not enough for "1 September
+ * 2026", and the date collides with the money beside it. Let this table size
+ * its own columns to content instead.
+ */
+.sheet__items--auto {
+  table-layout: auto;
+}
+
+.sheet__items--auto .col-qty,
+.sheet__items--auto .col-rate,
+.sheet__items--auto .col-amount {
+  width: auto;
+  white-space: nowrap;
+}
+
+.sheet__items--auto .col-rate,
+.sheet__items--auto .col-amount {
+  text-align: right;
+}

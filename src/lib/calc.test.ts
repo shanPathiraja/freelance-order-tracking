@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   clearedTotalCents,
+  clientStatement,
   dashboardSummary,
   daysBetween,
   deliveryBucket,
@@ -646,5 +647,77 @@ describe('countdown formatting', () => {
 
     expect(left).toBe(90 * 60_000)
     expect(formatRemaining(left!)).toBe('1h 30m')
+  })
+})
+
+describe('client statement', () => {
+  const orders = [
+    order({ id: 'o1', clientId: 'c1', title: 'Leaflet', status: 'started' }),
+    order({ id: 'o2', clientId: 'c1', title: 'FB Posts', status: 'delivered' }),
+    order({ id: 'o3', clientId: 'c1', title: 'Dead job', status: 'cancelled' }),
+    order({ id: 'o4', clientId: 'c1', title: 'Old job', status: 'completed' }),
+    order({ id: 'o9', clientId: 'other', title: 'Someone else', status: 'started' }),
+  ]
+
+  const invoices = [
+    invoice({ id: 'i1', orderId: 'o1', clientId: 'c1', amountDueCents: 50_000, dueDate: '2026-09-01' }),
+    invoice({ id: 'i2', orderId: 'o2', clientId: 'c1', amountDueCents: 40_000, dueDate: '2026-09-20' }),
+    invoice({ id: 'i3', orderId: 'o3', clientId: 'c1', amountDueCents: 99_000, dueDate: '2026-09-05' }),
+    invoice({ id: 'i4', orderId: 'o4', clientId: 'c1', amountDueCents: 20_000, dueDate: '2026-07-01' }),
+    invoice({ id: 'i9', orderId: 'o9', clientId: 'other', amountDueCents: 70_000, dueDate: '2026-09-01' }),
+  ]
+
+  const transactions = [
+    txn({ id: 't1', invoiceId: 'i1', orderId: 'o1', clientId: 'c1', amountCents: 20_000, paidOn: '2026-08-15' }),
+    txn({ id: 't2', invoiceId: 'i4', orderId: 'o4', clientId: 'c1', amountCents: 20_000, paidOn: '2026-07-02' }),
+    txn({ id: 't9', invoiceId: 'i9', orderId: 'o9', clientId: 'other', amountCents: 70_000 }),
+  ]
+
+  const statement = clientStatement('c1', orders, invoices, transactions, '2026-09-10')
+
+  it('covers only this client', () => {
+    expect(statement.lines.every((l) => l.invoice.clientId === 'c1')).toBe(true)
+    expect(statement.payments.every((p) => p.clientId === 'c1')).toBe(true)
+  })
+
+  it('leaves out cancelled work entirely', () => {
+    // Billing a client for a job you cancelled is the worst kind of error here.
+    expect(statement.lines.map((l) => l.invoice.id)).not.toContain('i3')
+  })
+
+  it('leaves out a settled, closed order', () => {
+    expect(statement.lines.map((l) => l.invoice.id)).not.toContain('i4')
+  })
+
+  it('shows both what is owed and what has been paid', () => {
+    expect(statement.totalInvoicedCents).toBe(90_000)
+    expect(statement.totalPaidCents).toBe(20_000)
+    expect(statement.balanceDueCents).toBe(70_000)
+  })
+
+  it('lists the payments already made against the included work', () => {
+    expect(statement.payments.map((p) => p.id)).toEqual(['t1'])
+  })
+
+  it('counts what is overdue', () => {
+    expect(statement.overdueCount).toBe(1)
+  })
+
+  it('orders lines by due date, oldest debt first', () => {
+    expect(statement.lines.map((l) => l.invoice.id)).toEqual(['i1', 'i2'])
+  })
+
+  it('still bills a closed order that was never fully paid', () => {
+    const partlyPaid = transactions.filter((t) => t.id !== 't2')
+    const result = clientStatement('c1', orders, invoices, partlyPaid, '2026-09-10')
+
+    expect(result.lines.map((l) => l.invoice.id)).toContain('i4')
+  })
+
+  it('is empty for a client with nothing outstanding', () => {
+    const result = clientStatement('nobody', orders, invoices, transactions, '2026-09-10')
+
+    expect(result.lines).toEqual([])
+    expect(result.balanceDueCents).toBe(0)
   })
 })
